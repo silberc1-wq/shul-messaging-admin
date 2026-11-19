@@ -893,6 +893,17 @@ $('#login-form').addEventListener('submit', async e => {
 $('#login-again').addEventListener('click', () => { show('#login-form', true); show('#login-sent', false); });
 $$('[data-signout]').forEach(b => b.addEventListener('click', async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); }));
 
+// Expired or already-used sign-in link: say so plainly instead of showing a blank login.
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+  const err = h.get('error_code') || h.get('error');
+  if (!err) return;
+  const msg = /expired|otp/i.test(err + h.get('error_description'))
+    ? 'That sign-in link has expired or was already used. Enter your email to get a new one.'
+    : 'Sign-in failed: ' + (h.get('error_description') || err).replace(/\+/g, ' ');
+  history.replaceState(null, '', location.pathname);
+  setTimeout(() => { show('#login', true); const n = $('#login-error'); n.textContent = msg; n.classList.remove('hidden'); }, 0);
+})();
 let started = false;
 sb.auth.onAuthStateChange((_evt, session) => {
   if (session && !started) { started = true; startApp(session); }

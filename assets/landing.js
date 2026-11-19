@@ -1,5 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
+// A sign-in link that lands on the home page (Supabase falls back to the Site URL) goes on to the admin app.
+if (/access_token=|error_description=|[?&]code=/.test(location.hash + location.search)) {
+  location.replace('app.html' + location.search + location.hash);
+  throw new Error('redirecting to sign-in');
+}
+
 const cfg = window.SHUL_CONFIG;
 const sb = createClient(cfg.supabaseUrl, cfg.supabaseKey);
 const $ = (s, el = document) => el.querySelector(s);
