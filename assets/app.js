@@ -614,6 +614,8 @@ const SETTINGS_COLS = [
   { f: 'test_mode', label: 'Test mode', type: 'bool', hint: 'Only contacts marked "Test contact" receive messages.' },
   { f: 'duplicate_window_minutes', label: 'Warn about duplicates within (minutes)', type: 'number' },
   { f: 'dnd_start', label: 'Quiet hours start (no calls)', type: 'time' }, { f: 'dnd_end', label: 'Quiet hours end', type: 'time', hint: 'EMERGENCY ignores quiet hours.' },
+  { f: 'sms_prefix', label: 'Texts start with', hint: 'Shown before every text, e.g. "Sample Shul:". Leave empty to use your organization name. Carriers require texts to say who they are from.' },
+  { f: 'sms_stop_footer', label: 'Add "Reply STOP to opt out." to texts', type: 'bool', hint: 'Recommended by carriers. Skipped automatically if your message already mentions STOP.' },
   { f: 'forward_replies_phone', label: 'Forward member replies to phone', type: 'phone' },
   { f: 'forward_replies_email', label: 'Forward replies to email', type: 'email', hint: 'Saved for email forwarding (coming soon).' },
   { f: 'allow_auto_signup', label: 'Auto-add people who text JOIN', type: 'bool', hint: 'If off, they appear in Signup Requests for approval.' },
@@ -718,13 +720,17 @@ async function sendPage() {
   </div>`;
   const f = $('#sendf'); let reach = null;
   const draw = () => {
-    const t = f.msg.value; const i = segInfo(t); const mode = f.mode.value;
+    const raw = f.msg.value; const mode = f.mode.value;
+    const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
+    const t = raw.trim() ? (raw.trim().toLowerCase().startsWith(pre.replace(/: $/, '').toLowerCase()) && pre ? '' : pre) + raw.trim() + (/stop/i.test(raw) ? '' : foot) : '';
+    const i = segInfo(t);
     const sms = reach ? reach.sms : 0, calls = reach ? reach.calls : 0;
     $('#calc').innerHTML = `
       <div>Encoding</div><div>${i.encoding === 'GSM-7' ? '<span class="pill ok">GSM-7 (standard)</span>' : '<span class="pill warn">Unicode</span>'}</div>
       <div>Characters</div><div>${num(i.chars)}${i.encoding !== 'GSM-7' ? ` <span class="muted small">(${num([...t].length)} typed)</span>` : ''}</div>
       <div>Segments per text</div><div><b style="font-size:20px">${i.segments}</b> <span class="muted small">· up to ${i.perSeg} chars each</span></div>
       <div>Remaining</div><div>${num(i.remaining)} characters before the next segment</div>
+      <div>Members will see</div><div class="small" style="white-space:pre-wrap;background:#f4f2ec;padding:6px 9px;border-radius:8px">${esc(t) || '<span class="muted">…</span>'}</div>
       <div>Non-GSM characters</div><div>${i.bad.length ? i.bad.map(c => `<code style="background:#fff3d6;padding:0 5px;border-radius:4px">${esc(c === ' ' ? '␠' : c)}</code>`).join(' ') : '<span class="muted">None detected</span>'}</div>`;
     $('#reach').innerHTML = reach ? `
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
@@ -752,11 +758,13 @@ async function sendPage() {
   f.addEventListener('submit', async e => {
     e.preventDefault();
     const t = f.msg.value.trim(); if (!t) return toast('Write a message first', true);
+    const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
+    const full = (pre && t.toLowerCase().startsWith(pre.replace(/: $/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
-    const i = segInfo(t), mode = f.mode.value;
+    const i = segInfo(full), mode = f.mode.value;
     const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
       `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * i.segments)} segments<br><br>
-       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(t)}</span>`, 'Send now', false);
+       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(full)}</span>`, 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: t,
