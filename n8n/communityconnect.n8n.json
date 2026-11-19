@@ -1,0 +1,559 @@
+{
+  "name": "CommunityConnect - Supabase",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shul-sms-487f57c6411a43a7",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cd4aced3-a7fa-494f-a1d5-bfa802e9c698",
+      "name": "Twilio Inbound SMS",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "5b2d0e51-3a32-43ab-990e-1c2fdeb96efc"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c127aa54-502e-439f-ad9c-9dfc63a9c713",
+      "name": "Respond to Twilio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "23892557-1fd7-44b5-836f-d0dbeb39df12",
+              "name": "supabaseUrl",
+              "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "d78335a6-f980-43a7-b688-59ecc64dfa59",
+              "name": "twilioAccountSid",
+              "value": "AC_PUT_YOUR_ACCOUNT_SID_HERE",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "53185f8c-411a-4189-8c0a-df7c2252e8d4",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "958cd946-4810-43f8-a919-abf1f641439c",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a7933503-06be-412e-8593-da481ff7d175",
+              "leftValue": "={{ !!($json.body && $json.body.From) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c93fdf17-d422-4b72-b7c3-e429d6ba2c1a",
+      "name": "Is Inbound SMS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.supabaseUrl }}/rest/v1/rpc/handle_inbound_sms",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_from: $json.body.From, p_to: $json.body.To, p_body: $json.body.Body }) }}",
+        "options": {}
+      },
+      "id": "9d06a9e9-6db2-416b-824f-0ec0b64d7e0d",
+      "name": "Handle Inbound SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.supabaseUrl }}/rest/v1/rpc/dispatch_due_scheduled",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "bb026e1b-33b9-45ea-a987-dec0a7dc9d24",
+      "name": "Dispatch Scheduled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst sid = $('Config').first().json.twilioAccountSid;\nconst esc = s => String(s || '').replace(/[<>&\"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\"':'&quot;',\"'\":'&apos;'}[c]));\nconst enc = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');\nfunction twilioRequest(item) {\n  if (item.channel === 'call') {\n    const say = `<Say voice=\"alice\">${esc(item.body)}</Say>`;\n    return { url: `https://api.twilio.com/2010-04-01/Accounts/${sid}/Calls.json`,\n             form: enc({ To: item.to, From: item.from, Twiml: `<Response><Pause length=\"1\"/>${say}<Pause length=\"1\"/><Say voice=\"alice\">Again.</Say>${say}</Response>` }) };\n  }\n  return { url: `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, form: enc({ To: item.to, From: item.from, Body: item.body }) };\n}\n\n// Turn the plan from Supabase into one item per text / call\nconst plan = $input.first().json || {};\nconst out = [];\nfor (const m of plan.messages || []) out.push({ kind: 'message', channel: 'sms', to: m.to, from: m.from, body: m.body });\nfor (const b of plan.broadcasts || [])\n  for (const r of b.recipients || [])\n    out.push({ kind: 'broadcast', history_id: b.history_id, channel: r.channel, to: r.to, from: b.from, body: r.body });\nreturn out.filter(i => i.to && i.from).map(i => ({ json: { ...i, ...twilioRequest(i) } }));\n"
+      },
+      "id": "3c4892a3-2d37-4a94-bcf5-4eefa55631da",
+      "name": "Expand Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-www-form-urlencoded",
+        "body": "={{ $json.form }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "e686b947-5a4a-432e-84a4-8f17672837d3",
+      "name": "Twilio: Send Texts & Calls",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Count results per broadcast (failed items carry \"error\" because the Twilio node continues on error)\nconst sent = $('Expand Plan').all();\nconst results = $input.all();\nconst per = {};\nsent.forEach((s, i) => {\n  const it = s.json;\n  if (it.kind !== 'broadcast') return;\n  const r = (results[i] || {}).json || {};\n  const ok = !r.error && (r.sid || r.status);\n  const t = per[it.history_id] ||= { history_id: it.history_id, texts: 0, calls: 0, failed: 0 };\n  if (!ok) t.failed++; else if (it.channel === 'call') t.calls++; else t.texts++;\n});\nreturn Object.values(per).map(t => ({ json: t }));\n"
+      },
+      "id": "cc0cc76f-84bc-4d3f-a963-db71b2edb174",
+      "name": "Tally Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.supabaseUrl }}/rest/v1/rpc/record_broadcast_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_history_id: $json.history_id, p_texts: $json.texts, p_calls: $json.calls, p_failed: $json.failed }) }}",
+        "options": {}
+      },
+      "id": "5c45e5db-9232-4aa6-b9b3-439ecbef7242",
+      "name": "Record Broadcast Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst sid = $('Config').first().json.twilioAccountSid;\nconst esc = s => String(s || '').replace(/[<>&\"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\"':'&quot;',\"'\":'&apos;'}[c]));\nconst enc = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');\nfunction twilioRequest(item) {\n  if (item.channel === 'call') {\n    const say = `<Say voice=\"alice\">${esc(item.body)}</Say>`;\n    return { url: `https://api.twilio.com/2010-04-01/Accounts/${sid}/Calls.json`,\n             form: enc({ To: item.to, From: item.from, Twiml: `<Response><Pause length=\"1\"/>${say}<Pause length=\"1\"/><Say voice=\"alice\">Again.</Say>${say}</Response>` }) };\n  }\n  return { url: `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, form: enc({ To: item.to, From: item.from, Body: item.body }) };\n}\n\n// \"Message sent\" confirmation back to whoever sent the broadcast\nreturn $input.all().map(i => i.json).filter(r => r.notify && r.to && r.from)\n  .map(r => ({ json: { ...r, ...twilioRequest({ channel: 'sms', to: r.to, from: r.from, body: r.body }) } }));\n"
+      },
+      "id": "859f0a3f-3149-4766-8488-a806b4a8c35c",
+      "name": "Build 'Sent' Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/x-www-form-urlencoded",
+        "body": "={{ $json.form }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "e2b986ed-6b0d-4479-ae69-32276aef24bb",
+      "name": "Twilio: Send Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "events": [
+          "checkout.session.completed",
+          "invoice.paid"
+        ]
+      },
+      "id": "4f20123d-2959-4289-831a-b76e6a9bf765",
+      "name": "Stripe Payments",
+      "type": "n8n-nodes-base.stripeTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        700
+      ],
+      "webhookId": "88481c71-d4e7-412e-9f01-2f00b23c296b"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a393a113-fe32-436e-829f-3b752c6ba1d3",
+              "name": "supabaseUrl",
+              "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5b1c62a0-936b-4354-ab87-f12057525a3d",
+      "name": "Config (payments)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Stripe events -> what to record in Supabase\nconst e = $input.first().json;\nconst o = (e.data && e.data.object) || {};\nif (e.type === 'checkout.session.completed' && o.client_reference_id) {\n  return [{ json: { fn: 'mark_signup_paid', body: { p_signup_id: o.client_reference_id, p_provider: 'stripe',\n    p_customer: o.customer || '', p_subscription: o.subscription || '', p_amount: (o.amount_total || 0) / 100 } } }];\n}\nif (e.type === 'invoice.paid' && o.subscription && o.billing_reason !== 'subscription_create') {\n  const end = o.lines && o.lines.data && o.lines.data[0] && o.lines.data[0].period ? o.lines.data[0].period.end : null;\n  return [{ json: { fn: 'extend_paid_until', body: { p_subscription: o.subscription,\n    p_period_end: new Date((end || Date.now() / 1000) * 1000).toISOString().slice(0, 10), p_amount: (o.amount_paid || 0) / 100 } } }];\n}\nreturn [];\n"
+      },
+      "id": "79adc474-521f-40c8-9ddb-279653e9a619",
+      "name": "Read Payment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (payments)').first().json.supabaseUrl }}/rest/v1/rpc/{{ $json.fn }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "874c738f-196b-40ed-8736-fef9df562719",
+      "name": "Record Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "width": 1100,
+        "height": 480,
+        "content": "## CommunityConnect (Supabase + Twilio)\nAll rules live in **Supabase**. This workflow just carries messages in and out.\n\n**Setup (one time)**\n1. **Config** node: paste your Twilio **Account SID** (starts with AC).\n2. Credentials: **Supabase API** (Host = https://zuyqaicvnpwqawfxakjg.supabase.co, Service Role Secret from Supabase \u2192 Project Settings \u2192 API keys) on the 4 Supabase nodes. **Twilio API** on the 2 Twilio nodes. **Stripe API** on *Stripe Payments* (only if you take payments).\n3. Activate. In Twilio \u2192 each shul number \u2192 Messaging \u2192 *A message comes in* \u2192 **Webhook, HTTP POST** \u2192 the **Production URL** of *Twilio Inbound SMS*.\n\n**Flows**\n- Incoming text \u2192 Supabase decides \u2192 texts/calls go out \u2192 result logged \u2192 sender gets \"Message sent\".\n- Every 5 min \u2192 scheduled messages that are due go out.\n- Stripe payment \u2192 signup marked paid / subscription renewed.\n\nThe webhook path is random on purpose \u2014 keep the URL private."
+      },
+      "id": "a799f1ef-336f-4fb8-bb1e-02d1d6ea3a13",
+      "name": "Read Me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -330
+      ]
+    }
+  ],
+  "connections": {
+    "Twilio Inbound SMS": {
+      "main": [
+        [
+          {
+            "node": "Respond to Twilio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Twilio": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Is Inbound SMS?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Inbound SMS?": {
+      "main": [
+        [
+          {
+            "node": "Handle Inbound SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dispatch Scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Inbound SMS": {
+      "main": [
+        [
+          {
+            "node": "Expand Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Scheduled": {
+      "main": [
+        [
+          {
+            "node": "Expand Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Plan": {
+      "main": [
+        [
+          {
+            "node": "Twilio: Send Texts & Calls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twilio: Send Texts & Calls": {
+      "main": [
+        [
+          {
+            "node": "Tally Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tally Results": {
+      "main": [
+        [
+          {
+            "node": "Record Broadcast Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Broadcast Result": {
+      "main": [
+        [
+          {
+            "node": "Build 'Sent' Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build 'Sent' Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Twilio: Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe Payments": {
+      "main": [
+        [
+          {
+            "node": "Config (payments)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config (payments)": {
+      "main": [
+        [
+          {
+            "node": "Read Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Payment": {
+      "main": [
+        [
+          {
+            "node": "Record Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

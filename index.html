@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommunityConnect — Text & voice announcements for your community</title>
+<meta name="description" content="Send text and voice announcements to your congregation by simply texting one number. Groups, approvals, history and opt-outs built in.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://*.supabase.co https://esm.sh; img-src 'self' data:; form-action 'self'; base-uri 'self'">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d3a6e'/><path d='M8 10h16v9H14l-5 4v-4H8z' fill='%23c9973b'/></svg>">
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <a class="logo" href="./"><span class="logo-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v11H9l-5 4v-4H3z"/></svg></span><span data-brand>CommunityConnect</span></a>
+    <nav style="display:flex;gap:10px">
+      <a class="btn ghost" href="#pricing">Pricing</a>
+      <a class="btn secondary" href="app.html">Admin login</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div>
+      <span class="pill gold">For shuls, churches, schools & any community</span>
+      <h1>One message.<br><em>Everyone</em> hears it.</h1>
+      <p class="lead">Your office texts one number. Members get the announcement by text, or a phone call for those who don't text. Only approved people can send, and only to their own groups.</p>
+      <div class="cta">
+        <a class="btn gold" href="#pricing">See plans & sign up</a>
+        <a class="btn secondary" href="#how">How it works</a>
+      </div>
+      <p class="small muted" style="margin-top:14px">YES confirmation before anything goes out · STOP opt-out built in · Full history</p>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="phone-screen">
+        <div class="bubble me">SEND MEN Mincha today is at 6:45 PM</div>
+        <div class="bubble them">Command Received
+
+Group: MEN
+Recipients: 142 (128 texts, 14 calls)
+
+Reply YES to send or NO to cancel.</div>
+        <div class="bubble me">YES</div>
+        <div class="bubble them">Message sent.
+
+Group: MEN
+Texts: 128
+Calls: 14
+Failed: 0</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<section class="section" id="how" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">No app to install. Admins just text.</p>
+    <div class="steps">
+      <div class="card step"><h3>Text a command</h3><p class="muted">An approved admin texts <code>SEND WOMEN Ladies event tonight at 8</code> to your organization's number.</p></div>
+      <div class="card step"><h3>Confirm with YES</h3><p class="muted">The system replies with how many people will get it. Reply <code>YES</code> to send or <code>NO</code> to cancel.</p></div>
+      <div class="card step"><h3>Everyone is reached</h3><p class="muted">Texts go to texters and voice calls to members who prefer calls. You get a "sent" summary.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Everything your office needs</h2>
+    <p class="sub">Built around how communities actually communicate.</p>
+    <div class="features">
+      <div class="card feature"><div class="ic">👥</div><h3>Groups & departments</h3><p>Men, Women, Board, Youth, Volunteers, or your own. Members can be in several groups.</p></div>
+      <div class="card feature"><div class="ic">🔐</div><h3>Permissions</h3><p>Only approved phones can send. A youth director can send only to Youth. Full admins can reach everyone.</p></div>
+      <div class="card feature"><div class="ic">📞</div><h3>Text or voice</h3><p><b>SEND</b> uses each member's preference. <b>TEXT</b> sends texts only. <b>CALL</b> sends voice calls only.</p></div>
+      <div class="card feature"><div class="ic">🚨</div><h3>Emergency mode</h3><p><b>EMERGENCY</b> skips confirmation and quiet hours when it really matters.</p></div>
+      <div class="card feature"><div class="ic">⏰</div><h3>Scheduling</h3><p><b>SCHEDULE</b> a message for later, from your phone or the admin website.</p></div>
+      <div class="card feature"><div class="ic">↩️</div><h3>Replies forwarded</h3><p>When members reply, the office gets it on their phone, and it's saved on the website.</p></div>
+      <div class="card feature"><div class="ic">📋</div><h3>Admin website</h3><p>Manage contacts, groups, admins and settings. See history, usage and every change.</p></div>
+      <div class="card feature"><div class="ic">✋</div><h3>Compliant</h3><p>STOP opt-outs, JOIN signups and carrier registration handled for you.</p></div>
+      <div class="card feature"><div class="ic">🛡️</div><h3>Nothing gets lost</h3><p>Deleted items can be restored, and every change is logged with who made it.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="pricing" style="background:#fff;border-top:1px solid var(--line)">
+  <div class="wrap" style="text-align:center">
+    <h2>Simple pricing</h2>
+    <p class="sub">Pick the plan that fits your community. If you outgrow it, we'll move you to the next tier.</p>
+    <div class="toggle" role="tablist">
+      <button data-period="MONTHLY" class="on">Monthly</button>
+      <button data-period="YEARLY">Yearly <span class="small">(2 months free)</span></button>
+    </div>
+    <div class="prices" id="prices"><p class="muted">Loading plans…</p></div>
+    <p class="note">Your organization's phone number stays yours while your account is active. Taking a break? Choose <b>Keep My Number</b> to hold it for a small yearly fee.<br>Extra phone numbers available on any plan. One-time setup fee includes number setup and carrier registration.</p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <span>© <span id="year"></span> <span data-brand>CommunityConnect</span></span>
+    <span>Questions? <a id="support-link" href="#">Email us</a> · <a href="app.html">Admin login</a></span>
+  </div>
+</footer>
+
+<div id="toast"></div>
+<script src="assets/config.js"></script>
+<script type="module" src="assets/landing.js"></script>
+</body>
+</html>
