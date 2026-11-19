@@ -152,9 +152,10 @@ const VIEWS = {
       { f: 'created_at', label: 'Added', type: 'date', edit: false },
     ], defaults: { method: 'TEXT', active: true, language: 'English', signup_source: 'Website' } },
 
-  groups: { title: 'Groups', perm: 'contacts', icon: '🗂️', table: 'groups', scope: 'org', order: ['code', true], soft: true,
-    desc: 'Departments and lists. Texters can send to a group by its code, e.g. SEND WOMEN …',
+  groups: { title: 'Groups', perm: 'contacts', icon: '🗂️', table: 'groups', scope: 'org', order: ['number', true], soft: true,
+    desc: 'Departments and lists. Texters can send by name or number, e.g. SEND WOMEN … or SEND 7 …, and pick the number on the phone when recording.',
     cols: [
+      { f: 'number', label: '#', type: 'number', hint: 'Short number for texting (TEXT 2 …) and the phone keypad. Leave blank to get the next free number.' },
       { f: 'code', label: 'Code', req: true, hint: 'One word, e.g. WOMEN, BOARD, YOUTH' }, { f: 'name', label: 'Name' },
       { f: 'description', label: 'Description', type: 'longtext' }, { f: 'active', label: 'Active', type: 'bool' },
       { f: 'default_send_type', label: 'Default send', type: 'select', opts: ['SEND', 'TEXT', 'CALL'] },
@@ -201,6 +202,7 @@ const VIEWS = {
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status' },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext' },
+      { f: 'audio_url', label: 'Recording', render: v => /^https:\/\//.test(v || '') ? `<a href="${esc(v)}" target="_blank" rel="noopener">▶ Play</a>` : '' },
       { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'sent_count', label: 'Texts', type: 'number' },
       { f: 'calls_made', label: 'Calls', type: 'number' }, { f: 'failed_count', label: 'Failed', type: 'number' }, { f: 'status', label: 'Status', type: 'status' },
     ] },
@@ -742,8 +744,11 @@ CALL ALL Important announcement
 EMERGENCY ALL Building closed today
 SCHEDULE BOARD 2026-12-01 19:00 Board meeting
 YES   → confirm      NO → cancel
+TEXT 1 Same as TEXT ALL (groups have numbers)
+GROUPS   → list group numbers
 COMMANDS → list commands</pre>
-        <p class="small muted" style="margin-bottom:0">SEND uses each member's preference (text or call). Members can text STOP, START, or JOIN.</p></div>
+        <p class="small muted">SEND uses each member's preference (text or call). Members can text STOP, START, or JOIN.</p>
+        <p class="small muted" style="margin-bottom:0">📞 <b>Voice:</b> call ${esc(fmtPhone(o.twilio_number))} from a texter's phone, enter the group number, record, and press 1 to send it as calls to everyone.</p></div>
     </div>`;
 }
 
@@ -839,12 +844,21 @@ async function sendPage() {
   <div class="two">
     <form class="card panel" id="sendf" novalidate>
       <div class="grid2">
-        <div class="field"><label>To group</label><select name="group">${groups.map(g => `<option>${esc(g)}</option>`).join('')}</select></div>
+        <div class="field"><label>To group</label><select name="group">${groups.map(g => { const n = S.groups.find(x => x.code === g)?.number; return `<option value="${esc(g)}">${n ? n + ' · ' : ''}${esc(g)}</option>`; }).join('')}</select></div>
         <div class="field"><label>How</label><select name="mode">
           <option value="PREF">By each member's preference (text or call)</option><option value="TEXT">Text only</option>
-          <option value="CALL">Phone call only</option><option value="EMERGENCY">🚨 Emergency (ignores quiet hours)</option></select></div>
+          <option value="CALL">Phone call only</option><option value="VOICE">🎙️ Voice recording (calls everyone)</option><option value="EMERGENCY">🚨 Emergency (ignores quiet hours)</option></select></div>
       </div>
-      <div class="field"><label>Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
+      <div id="voicebox" class="hidden">
+        <div class="field"><label>Recording</label>
+          <div class="groups-pick" style="margin-bottom:10px"><label><input type="radio" name="vsrc" value="file" checked> Upload a file</label><label><input type="radio" name="vsrc" value="url"> Link to a recording</label></div>
+          <input type="file" name="vfile" id="vfile" accept=".mp3,.wav,audio/mpeg,audio/wav">
+          <input type="url" name="vurl" id="vurl" class="hidden" placeholder="https://…/announcement.mp3">
+          <div class="hint">MP3 or WAV, up to 15 MB. Phone recordings in other formats (like .m4a) need to be saved as MP3 first.</div></div>
+        <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
+        <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
+      </div>
+      <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div></div>
       <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -852,11 +866,11 @@ async function sendPage() {
         <button class="btn gold" type="submit" id="sendbtn">Review & send</button></div>
     </form>
     <div class="card panel">
-      <h3>Message calculator</h3>
+      <h3 id="calch">Message calculator</h3>
       <div class="kv" id="calc"></div>
       <div style="margin:14px 0 6px;font-weight:600;font-size:13px;color:var(--ink-2)">Who will receive it</div>
       <div class="kv" id="reach"><div>Recipients</div><div class="muted">…</div></div>
-      <p class="small muted" style="margin:14px 0 0">Carriers bill texts per <b>segment</b>. A segment is 160 plain characters, or 70 if the message has an emoji or special character. Long messages are split into 153 / 67-character parts.</p>
+      <p class="small muted" id="segnote" style="margin:14px 0 0">Carriers bill texts per <b>segment</b>. A segment is 160 plain characters, or 70 if the message has an emoji or special character. Long messages are split into 153 / 67-character parts.</p>
     </div>
   </div>`;
   const f = $('#sendf'); let reach = null;
@@ -886,11 +900,39 @@ async function sendPage() {
       $('#fixbtn').onclick = () => { f.msg.value = fixSmart(f.msg.value); draw(); };
     } else if (i.bad.length) { bc.style.display = ''; bc.textContent = 'This message has emoji or special characters, so each segment holds 70 characters instead of 160.'; }
     else bc.style.display = 'none';
-    $('#callnote').style.display = mode === 'CALL' || (calls > 0 && mode !== 'TEXT') ? '' : 'none';
+    $('#callnote').style.display = mode !== 'VOICE' && (mode === 'CALL' || (calls > 0 && mode !== 'TEXT')) ? '' : 'none';
+    const voice = mode === 'VOICE';
+    $('#voicebox').classList.toggle('hidden', !voice);
+    $('#msglabel').textContent = voice ? 'Short description (for History, optional)' : 'Message';
+    f.msg.rows = voice ? 2 : 6; f.msg.placeholder = voice ? 'e.g. Shabbos schedule announcement' : 'Mincha today is at 6:45 PM.';
+    $('#calc').classList.toggle('hidden', voice); $('#badchars').style.display = voice ? 'none' : $('#badchars').style.display;
+    $('#calch').textContent = voice ? 'Voice recording' : 'Message calculator';
+    $('#segnote').classList.toggle('hidden', voice);
+    if (voice && reach) $('#reach').innerHTML = `<div>Phone calls</div><div><b>${num(reach.calls)}</b> people</div>
+      ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} (quiet hours)</div>` : ''}
+      ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}`;
   };
+  // voice: choose file or link, preview it
+  const vplayer = $('#vplayer'); let vObjUrl = null;
+  const vsrc = () => f.querySelector('input[name=vsrc]:checked').value;
+  const showPlayer = src => { if (src) { vplayer.src = src; vplayer.classList.remove('hidden'); } else { vplayer.removeAttribute('src'); vplayer.classList.add('hidden'); } };
+  f.querySelectorAll('input[name=vsrc]').forEach(r => r.addEventListener('change', () => {
+    $('#vfile').classList.toggle('hidden', vsrc() !== 'file'); $('#vurl').classList.toggle('hidden', vsrc() !== 'url');
+    showPlayer(vsrc() === 'file' ? vObjUrl : (/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
+  }));
+  f.vfile.addEventListener('change', () => {
+    const file = f.vfile.files[0]; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null;
+    if (file) {
+      if (!/\.(mp3|wav)$/i.test(file.name)) { toast('Please choose an MP3 or WAV file.', true); f.vfile.value = ''; }
+      else if (file.size > 15 * 1024 * 1024) { toast('That file is over 15 MB.', true); f.vfile.value = ''; }
+      else vObjUrl = URL.createObjectURL(file);
+    }
+    showPlayer(vObjUrl);
+  });
+  f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' });
     reach = error ? null : data; draw();
   };
   f.msg.addEventListener('input', draw);
@@ -898,6 +940,7 @@ async function sendPage() {
   loadReach();
   f.addEventListener('submit', async e => {
     e.preventDefault();
+    if (f.mode.value === 'VOICE') return sendVoice();
     const t = f.msg.value.trim(); if (!t) return toast('Write a message first', true);
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const full = (pre && t.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
@@ -915,6 +958,30 @@ async function sendPage() {
     toast('Sending now. It will appear in History in a moment.');
     f.msg.value = ''; draw();
   });
+  async function sendVoice() {
+    const file = vsrc() === 'file' ? f.vfile.files[0] : null, link = vsrc() === 'url' ? f.vurl.value.trim() : '';
+    if (!file && !link) return toast(vsrc() === 'file' ? 'Choose a recording to upload.' : 'Paste the link to the recording.', true);
+    if (link && !/^https:\/\/\S+$/.test(link)) return toast('The link must start with https://', true);
+    if (!reach || !reach.calls) return toast('Nobody in this group would receive a call', true);
+    const ok = await confirmBox('Send this voice recording?',
+      `<b>${esc(f.group.value)}</b> · ${num(reach.calls)} phone calls<br><br>Each person hears "This is a message from ${esc(o.name)}", then the recording twice.`, 'Call everyone now', false);
+    if (!ok) return;
+    const btn = $('#sendbtn'); btn.disabled = true; btn.textContent = file ? 'Uploading…' : 'Sending…';
+    try {
+      let url = link;
+      if (file) {
+        const path = `${o.id}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g, '_').slice(-60)}`;
+        const type = /\.wav$/i.test(file.name) ? 'audio/wav' : 'audio/mpeg';
+        const up = await sb.storage.from('recordings').upload(path, file, { contentType: type, upsert: false });
+        if (up.error) return toast('Upload failed: ' + up.error.message, true);
+        url = sb.storage.from('recordings').getPublicUrl(path).data.publicUrl;
+      }
+      const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: f.msg.value.trim(), p_mode: 'CALL', p_emergency: false, p_audio_url: url });
+      if (res.error) return toast(res.error.message, true);
+      toast('Calling now. It will appear in History in a moment.');
+      f.msg.value = ''; f.vfile.value = ''; f.vurl.value = ''; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null; showPlayer(null); draw();
+    } finally { btn.disabled = false; btn.textContent = 'Review & send'; }
+  }
 }
 
 /* ----- platform helpers ----- */
@@ -982,7 +1049,7 @@ async function loadPerms() {
 }
 async function loadGroups() {
   if (!S.org) { S.groups = []; return; }
-  const { data } = await sb.from('groups').select('code,active').eq('org_id', S.org.id).is('deleted_at', null).order('code');
+  const { data } = await sb.from('groups').select('code,active,number').eq('org_id', S.org.id).is('deleted_at', null).order('number', { nullsFirst: false }).order('code');
   S.groups = data || [];
 }
 async function loadBadges() {
