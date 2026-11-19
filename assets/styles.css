@@ -139,9 +139,29 @@ section[id] { scroll-margin-top: 16px; }
 @media (max-width: 480px) { .wrap { padding: 0 18px; } .topbar .logo { font-size: 19px; } .topbar .logo-mark { width: 30px; height: 30px; } .topnav .btn { padding: 8px 12px; } .hero { padding: 32px 0 56px; } .section { padding: 48px 0; } .section h2 { font-size: 28px; } }
 
 /* ===================== Admin app ===================== */
-.app { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
-.side { background: var(--ink); color: #c9d0e0; padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.side .logo { color: #fff; padding: 4px 8px 16px; font-size: 18px; gap: 9px; }
+.app { display: grid; grid-template-columns: 268px minmax(0, 1fr); min-height: 100vh; transition: grid-template-columns .2s; }
+.side { background: var(--ink); color: #c9d0e0; padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; }
+.side-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 0 0 16px 6px; }
+.side .logo { color: #fff; font-size: 16px; gap: 9px; min-width: 0; white-space: nowrap; }
+.side .logo-text { overflow: hidden; text-overflow: ellipsis; }
+.side-toggle { flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; border: 1px solid #34437a; background: transparent; color: #c9d0e0; font-size: 16px; line-height: 1; cursor: pointer; }
+.side-toggle:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.side-foot { padding: 20px 12px 8px; font-size: 12px; color: #8892ad; overflow-wrap: anywhere; }
+.side-foot b { color: #d6dbe8; }
+.side-signout { color: #d6dbe8; padding-left: 0; margin-top: 6px; }
+.nav a .ni { width: 20px; flex-shrink: 0; text-align: center; }
+.nav a .nl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* collapsed (icons only) — desktop */
+@media (min-width: 861px) {
+  .app.collapsed { grid-template-columns: 68px minmax(0, 1fr); }
+  .app.collapsed .side { padding: 18px 10px; }
+  .app.collapsed .side-top { flex-direction: column; gap: 10px; padding: 0 0 14px; }
+  .app.collapsed .logo-text, .app.collapsed .nav-h, .app.collapsed .nav .nl, .app.collapsed .org-pick, .app.collapsed .side-foot { display: none; }
+  .app.collapsed .nav a { justify-content: center; padding: 9px 0; position: relative; }
+  .app.collapsed .nav a .badge { position: absolute; top: 3px; right: 5px; margin: 0; padding: 0 5px; font-size: 10px; }
+  .app.collapsed .nav-h + a, .app.collapsed .nav a + .nav-h + a { margin-top: 10px; }
+}
+@media (max-width: 860px) { .side-toggle { display: none; } }
 .nowrap { white-space: nowrap; }
 .side .org-pick { margin: 0 6px 14px; }
 .side .org-pick select { background: #22305a; color: #fff; border-color: #34437a; font-weight: 600; }

@@ -430,15 +430,23 @@ function renderNav() {
   $('#nav').innerHTML = items.map(([k, icon, label]) => {
     if (k === 'h') return `<div class="nav-h">${esc(icon)}</div>`;
     const v = VIEWS[k] || {}; const b = S.badges[k];
-    return `<a href="#${k}" class="${S.view === k ? 'on' : ''}"><span>${icon || v.icon}</span>${esc(label || v.title)}${b ? `<span class="badge">${b}</span>` : ''}</a>`;
+    const t = label || v.title;
+    return `<a href="#${k}" class="${S.view === k ? 'on' : ''}" title="${esc(t)}"><span class="ni">${icon || v.icon}</span><span class="nl">${esc(t)}</span>${b ? `<span class="badge">${b}</span>` : ''}</a>`;
   }).join('');
 }
 function go(v) { if (location.hash !== '#' + v) location.hash = v; else render(); }
 window.addEventListener('hashchange', () => { $('#side').classList.remove('open'); render(); });
 $('#nav').addEventListener('click', () => $('#side').classList.remove('open'));
+// desktop: collapse the side menu to icons only (remembered on this computer)
+function setCollapsed(on) {
+  $('#app').classList.toggle('collapsed', on); localStorageSet('cc_side_collapsed', on ? '1' : '');
+  const b = $('[data-collapse]'); b.textContent = on ? '»' : '«'; b.title = on ? 'Expand menu' : 'Collapse menu'; b.setAttribute('aria-label', b.title);
+}
+setCollapsed(localStorageGet('cc_side_collapsed') === '1');
 // mobile menu: open with the Menu button, close by tapping outside it
 document.addEventListener('click', e => {
   const side = $('#side');
+  if (e.target.closest('[data-collapse]')) { setCollapsed(!$('#app').classList.contains('collapsed')); return; }
   if (e.target.closest('[data-menu]')) { e.stopPropagation(); side.classList.add('open'); return; }
   if (side.classList.contains('open') && !e.target.closest('#side')) side.classList.remove('open');
 });
