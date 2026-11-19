@@ -236,3 +236,14 @@ pre.cmd { background: #f4f2ec; border-radius: 10px; padding: 12px 14px; font-siz
 .linkbtn:hover { text-decoration: underline; }
 .or { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* collapsed menu: hover to peek open over the page */
+@media (min-width: 861px) {
+  .app.collapsed .side { width: 68px; z-index: 45; transition: width .18s ease, box-shadow .18s ease; }
+  .app.collapsed .side:hover { width: 268px; padding: 18px 12px; box-shadow: 10px 0 30px rgba(20, 33, 61, .28); transition-delay: .12s; }
+  .app.collapsed .side:hover .side-top { flex-direction: row; gap: 4px; padding: 0 0 16px 6px; }
+  .app.collapsed .side:hover .logo-text, .app.collapsed .side:hover .nav .nl { display: inline; }
+  .app.collapsed .side:hover .nav-h, .app.collapsed .side:hover .org-pick, .app.collapsed .side:hover .side-foot { display: block; }
+  .app.collapsed .side:hover .nav a { justify-content: flex-start; padding: 8px 12px; }
+  .app.collapsed .side:hover .nav a .badge { position: static; margin-left: auto; padding: 0 7px; font-size: 11px; }
+  .app.collapsed .side:hover .nav-h + a, .app.collapsed .side:hover .nav a + .nav-h + a { margin-top: 0; }
+}
