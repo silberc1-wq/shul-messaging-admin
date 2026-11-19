@@ -863,7 +863,7 @@ async function sendPage() {
   const draw = () => {
     const raw = f.msg.value; const mode = f.mode.value;
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
-    const t = raw.trim() ? (raw.trim().toLowerCase().startsWith(pre.replace(/: $/, '').toLowerCase()) && pre ? '' : pre) + raw.trim() + (/stop/i.test(raw) ? '' : foot) : '';
+    const t = raw.trim() ? (raw.trim().toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) && pre ? '' : pre) + raw.trim() + (/stop/i.test(raw) ? '' : foot) : '';
     const i = segInfo(t);
     const sms = reach ? reach.sms : 0, calls = reach ? reach.calls : 0;
     $('#calc').innerHTML = `
@@ -900,7 +900,7 @@ async function sendPage() {
     e.preventDefault();
     const t = f.msg.value.trim(); if (!t) return toast('Write a message first', true);
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
-    const full = (pre && t.toLowerCase().startsWith(pre.replace(/: $/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
+    const full = (pre && t.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
     const i = segInfo(full), mode = f.mode.value;
     const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
