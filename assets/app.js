@@ -614,7 +614,7 @@ const SETTINGS_COLS = [
   { f: 'test_mode', label: 'Test mode', type: 'bool', hint: 'Only contacts marked "Test contact" receive messages.' },
   { f: 'duplicate_window_minutes', label: 'Warn about duplicates within (minutes)', type: 'number' },
   { f: 'dnd_start', label: 'Quiet hours start (no calls)', type: 'time' }, { f: 'dnd_end', label: 'Quiet hours end', type: 'time', hint: 'EMERGENCY ignores quiet hours.' },
-  { f: 'sms_prefix', label: 'Texts start with', hint: 'Shown before every text, e.g. "Sample Shul:". Leave empty to use your organization name. Carriers require texts to say who they are from.' },
+  { f: 'sms_prefix', label: 'Texts start with', hint: 'Shown before every text. Leave empty for "[Your organization] via CommunityConnect", which matches the registered carrier campaign. Carriers require texts to say who they are from.' },
   { f: 'sms_stop_footer', label: 'Add "Reply STOP to opt out." to texts', type: 'bool', hint: 'Recommended by carriers. Skipped automatically if your message already mentions STOP.' },
   { f: 'forward_replies_phone', label: 'Forward member replies to phone', type: 'phone' },
   { f: 'forward_replies_email', label: 'Forward replies to email', type: 'email', hint: 'Saved for email forwarding (coming soon).' },
