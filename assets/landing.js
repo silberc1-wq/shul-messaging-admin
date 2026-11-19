@@ -9,7 +9,7 @@ const num = n => n == null ? '' : Number(n).toLocaleString();
 
 document.querySelectorAll('[data-brand]').forEach(el => (el.textContent = cfg.brandName));
 $('#year').textContent = new Date().getFullYear();
-$('#support-link').href = 'mailto:' + cfg.supportEmail;
+['#support-link', '#support-link-2'].forEach(id => { const a = $(id); if (a) a.href = 'mailto:' + cfg.supportEmail; });
 
 function toast(msg, isError) {
   const t = $('#toast');

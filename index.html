@@ -8,15 +8,18 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://*.supabase.co https://esm.sh; img-src 'self' data:; form-action 'self'; base-uri 'self'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles.css?v=202611191310">
+<link rel="stylesheet" href="assets/styles.css?v=202611191700">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d3a6e'/><path d='M8 10h16v9H14l-5 4v-4H8z' fill='%23c9973b'/></svg>">
 </head>
 <body>
 <div class="wrap">
   <header class="topbar">
     <a class="logo" href="./"><span class="logo-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v11H9l-5 4v-4H3z"/></svg></span><span data-brand>CommunityConnect</span></a>
-    <nav style="display:flex;gap:10px">
-      <a class="btn ghost" href="#pricing">Pricing</a>
+    <nav class="topnav">
+      <a class="btn ghost nav-hide" href="#how">How it works</a>
+      <a class="btn ghost nav-hide" href="#features">Features</a>
+      <a class="btn ghost nav-hide" href="#pricing">Pricing</a>
+      <a class="btn ghost nav-hide" href="#faq">FAQ</a>
       <a class="btn secondary" href="app.html">Admin login</a>
     </nav>
   </header>
@@ -65,20 +68,20 @@ Failed: 0</div>
   </div>
 </section>
 
-<section class="section">
+<section class="section" id="features">
   <div class="wrap">
     <h2>Everything your office needs</h2>
     <p class="sub">Built around how communities actually communicate.</p>
     <div class="features">
-      <div class="card feature"><div class="ic">👥</div><h3>Groups & departments</h3><p>Men, Women, Board, Youth, Volunteers, or your own. Members can be in several groups.</p></div>
-      <div class="card feature"><div class="ic">🔐</div><h3>Permissions</h3><p>Only approved phones can send. A youth director can send only to Youth. Full admins can reach everyone.</p></div>
-      <div class="card feature"><div class="ic">📞</div><h3>Text or voice</h3><p><b>SEND</b> uses each member's preference. <b>TEXT</b> sends texts only. <b>CALL</b> sends voice calls only.</p></div>
-      <div class="card feature"><div class="ic">🚨</div><h3>Emergency mode</h3><p><b>EMERGENCY</b> skips confirmation and quiet hours when it really matters.</p></div>
-      <div class="card feature"><div class="ic">⏰</div><h3>Scheduling</h3><p><b>SCHEDULE</b> a message for later, from your phone or the admin website.</p></div>
-      <div class="card feature"><div class="ic">↩️</div><h3>Replies forwarded</h3><p>When members reply, the office gets it on their phone, and it's saved on the website.</p></div>
-      <div class="card feature"><div class="ic">📋</div><h3>Admin website</h3><p>Manage contacts, groups, admins and settings. See history, usage and every change.</p></div>
-      <div class="card feature"><div class="ic">✋</div><h3>Compliant</h3><p>STOP opt-outs, JOIN signups and carrier registration handled for you.</p></div>
-      <div class="card feature"><div class="ic">🛡️</div><h3>Nothing gets lost</h3><p>Deleted items can be restored, and every change is logged with who made it.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><h3>Groups & departments</h3><p>Men, Women, Board, Youth, Volunteers, or your own. Members can be in several groups.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Permissions</h3><p>Only approved phones can send. A youth director can send only to Youth. Full admins can reach everyone.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div><h3>Text or voice</h3><p><b>SEND</b> uses each member's preference. <b>TEXT</b> sends texts only. <b>CALL</b> sends voice calls only.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><h3>Emergency mode</h3><p><b>EMERGENCY</b> skips confirmation and quiet hours when it really matters.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><h3>Scheduling</h3><p><b>SCHEDULE</b> a message for later, from your phone or the admin website.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg></div><h3>Replies forwarded</h3><p>When members reply, the office gets it on their phone, and it's saved on the website.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div><h3>Admin website</h3><p>Manage contacts, groups, admins and settings. See history, usage and every change.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg></div><h3>Compliant</h3><p>STOP opt-outs, JOIN signups and carrier registration handled for you.</p></div>
+      <div class="card feature"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></svg></div><h3>Nothing gets lost</h3><p>Deleted items can be restored, and every change is logged with who made it.</p></div>
     </div>
   </div>
 </section>
@@ -96,15 +99,31 @@ Failed: 0</div>
   </div>
 </section>
 
+<section class="section" id="faq">
+  <div class="wrap" style="max-width:780px">
+    <h2>Questions</h2>
+    <p class="sub">The things people usually ask before signing up.</p>
+    <div class="faq">
+      <details><summary>Do members need to install an app?</summary><p>No. Members get regular text messages, or a phone call if they prefer. Admins send by texting your organization's number, or from the admin website.</p></details>
+      <details><summary>How long does setup take?</summary><p>US phone carriers require every organization that sends texts to be registered. We handle the registration for you. Approval usually takes a few business days, and you can set up your contacts and groups in the meantime.</p></details>
+      <details><summary>Who can send messages?</summary><p>Only the phones you list as texters. Each texter can be limited to certain groups, and every message needs a YES confirmation before it goes out (except EMERGENCY).</p></details>
+      <details><summary>What about members who don't text?</summary><p>Set their preference to Call. When you use SEND, they get an automated phone call that reads the announcement.</p></details>
+      <details><summary>How do members join or stop?</summary><p>Members can text JOIN to your number or sign up on your organization's web page. Anyone can reply STOP at any time and they won't receive texts again.</p></details>
+      <details><summary>What happens if we pause?</summary><p>Choose Keep My Number and your organization's number and data are held for you until you're ready to send again.</p></details>
+    </div>
+    <p class="note" style="font-size:14px;margin-top:26px">Still have a question? <a id="support-link-2" href="mailto:hello@nivolink.com">Email us</a> and we'll get back to you.</p>
+  </div>
+</section>
+
 <footer class="site">
   <div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px">
-    <span>© <span id="year"></span> <span data-brand>CommunityConnect</span></span>
-    <span><a href="privacy.html">Privacy</a> · <a href="terms.html">SMS Terms</a> · <a id="support-link" href="#">Email us</a> · <a href="app.html">Admin login</a></span>
+    <span>© <span id="year"></span> <span data-brand>CommunityConnect</span> · operated by FC PRO LLC dba Nivolink</span>
+    <span><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a id="support-link" href="mailto:hello@nivolink.com">Email us</a> · <a href="app.html">Admin login</a></span>
   </div>
 </footer>
 
 <div id="toast"></div>
-<script src="assets/config.js?v=202611191310"></script>
-<script type="module" src="assets/landing.js?v=202611191310"></script>
+<script src="assets/config.js?v=202611191700"></script>
+<script type="module" src="assets/landing.js?v=202611191700"></script>
 </body>
 </html>

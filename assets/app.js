@@ -51,10 +51,10 @@ function cell(col, row) {
   if (col.render) return col.render(v, row);
   switch (col.type) {
     case 'bool': return v ? '<span class="pill ok">Yes</span>' : '<span class="pill">No</span>';
-    case 'phone': return esc(fmtPhone(v));
+    case 'phone': return `<span class="nowrap">${esc(fmtPhone(v))}</span>`;
     case 'groups': return (v || []).map(g => `<span class="chip">${esc(g)}</span>`).join('') || '<span class="muted small">none</span>';
-    case 'datetime': return esc(fmtDT(v));
-    case 'date': return esc(fmtD(v));
+    case 'datetime': return `<span class="nowrap">${esc(fmtDT(v))}</span>`;
+    case 'date': return `<span class="nowrap">${esc(fmtD(v))}</span>`;
     case 'money': return esc(money(v));
     case 'number': return esc(num(v));
     case 'status': return pill(v);
@@ -579,7 +579,7 @@ async function overviewPage() {
   if (comp.data && comp.data.a2p_status !== 'CAMPAIGN APPROVED') warn.push(`Texting registration: ${pill(comp.data.a2p_status)}. <a href="#registration">Complete your registration details</a> so carriers deliver your texts.`);
   if (o.paid_until && new Date(o.paid_until) < new Date()) warn.push(`Payment was due ${esc(fmtD(o.paid_until))}.`);
   if (lim && pct >= 80) warn.push(`You've used ${pct}% of this month's messages.`);
-  main.innerHTML = head(o.name, `${plan ? plan.name + ' plan' : ''}${o.paid_until ? ' · paid until ' + fmtD(o.paid_until) : ''}`,
+  main.innerHTML = head(o.name, [plan ? plan.name + ' plan' : '', o.paid_until ? 'Paid until ' + fmtD(o.paid_until) : ''].filter(Boolean).join(' · '),
       '<a class="btn secondary" href="#scheduled">Schedule</a><a class="btn" href="#send">✉️ Send a message</a>') +
     (warn.length ? `<div class="card panel" style="margin-bottom:16px;border-color:#efd9a8;background:#fffaf0">${warn.map(w => `<div style="padding:3px 0">⚠️ ${w}</div>`).join('')}</div>` : '') +
     `<div class="stats">
