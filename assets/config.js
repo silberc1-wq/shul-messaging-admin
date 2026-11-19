@@ -4,5 +4,5 @@ window.SHUL_CONFIG = {
   supabaseUrl: 'https://zuyqaicvnpwqawfxakjg.supabase.co',
   supabaseKey: 'sb_publishable_feiJCANHyQKBgpEv2bl4Dg_Uw4E3hle',
   brandName: 'CommunityConnect',
-  supportEmail: 'silberc1@gmail.com',
+  supportEmail: 'hello@nivolink.com',
 };

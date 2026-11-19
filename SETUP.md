@@ -4,8 +4,8 @@ Supabase project: **shul-messaging** (`zuyqaicvnpwqawfxakjg`). The database, rul
 
 ## 1. Supabase login emails
 Supabase → **Authentication → URL Configuration**
-- **Site URL**: `https://silberc1-wq.github.io/shul-messaging-admin/app.html`
-- **Redirect URLs**: add `https://silberc1-wq.github.io/shul-messaging-admin/**`
+- **Site URL**: `https://connect.nivolink.com/app.html`
+- **Redirect URLs**: add `https://connect.nivolink.com/**`
 
 Recommended: Authentication → **Emails → SMTP Settings**. Connect a sender like Resend or Postmark. The built-in sender only allows a few emails per hour.
 
@@ -35,7 +35,7 @@ Recommended: Authentication → **Emails → SMTP Settings**. Connect a sender l
 The **Keep My Number** plan keeps the number reserved with sending paused (yearly fee).
 
 ## 5. GitHub Pages
-Repo Settings → Pages → Deploy from branch → `main` / root. The site is served at `https://silberc1-wq.github.io/shul-messaging-admin/`.
+Repo Settings → Pages → Deploy from branch → `main` / root. Custom domain: `connect.nivolink.com` (DNS CNAME `connect` → `silberc1-wq.github.io`). Tick **Enforce HTTPS**.
 
 ## Database backups and fixes
 - Supabase makes daily backups (Project → Database → Backups).

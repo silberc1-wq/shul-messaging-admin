@@ -8,7 +8,7 @@
   // Any unknown address (e.g. ".../app.html/#access_token=..." or a sign-in link that landed on the wrong path)
   // goes to the admin app, keeping the sign-in token that's after the "#".
   (function () {
-    var base = location.pathname.split('/').slice(0, 2).join('/') + '/';
+    var base = /github\.io$/.test(location.hostname) ? '/' + location.pathname.split('/')[1] + '/' : '/';
     var target = /access_token|type=magiclink|type=signup|app\.html/.test(location.href) ? 'app.html' : '';
     location.replace(base + target + location.search + location.hash);
   })();
