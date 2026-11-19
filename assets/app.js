@@ -436,6 +436,12 @@ function renderNav() {
 function go(v) { if (location.hash !== '#' + v) location.hash = v; else render(); }
 window.addEventListener('hashchange', () => { $('#side').classList.remove('open'); render(); });
 $('#nav').addEventListener('click', () => $('#side').classList.remove('open'));
+// mobile menu: open with the Menu button, close by tapping outside it
+document.addEventListener('click', e => {
+  const side = $('#side');
+  if (e.target.closest('[data-menu]')) { e.stopPropagation(); side.classList.add('open'); return; }
+  if (side.classList.contains('open') && !e.target.closest('#side')) side.classList.remove('open');
+});
 
 /* ============================================================
    GENERIC TABLE PAGE
@@ -544,7 +550,7 @@ async function undoChange(r) {
    CUSTOM PAGES
    ============================================================ */
 function head(title, desc, actions = '') {
-  return `<div class="main-head"><div><button class="btn secondary sm menu-btn" onclick="document.getElementById('side').classList.add('open')">☰ Menu</button>
+  return `<div class="main-head"><div><button class="btn secondary sm menu-btn" type="button" data-menu>☰ Menu</button>
     <h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</div><div style="display:flex;gap:8px">${actions}</div></div>`;
 }
 
