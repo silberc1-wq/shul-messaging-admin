@@ -238,8 +238,11 @@ const VIEWS = {
   admins: { title: 'Website Admins', icon: '🔑', table: 'org_admins', scope: 'org', order: ['email', true], soft: true,
     desc: 'Who can sign in to this website for this organization. Owners can add and remove admins.',
     cols: [{ f: 'email', label: 'Email', type: 'email', req: true }, { f: 'name', label: 'Name' },
-      { f: 'role', label: 'Role', type: 'select', opts: ['admin', 'owner'], req: true, render: v => pill(v) }, { f: 'created_at', label: 'Added', type: 'date', edit: false }],
-    defaults: { role: 'admin' } },
+      { f: 'role', label: 'Role', type: 'select', opts: ['admin', 'owner'], req: true, render: v => pill(v), hint: 'Owners can send to every group and manage admins.' },
+      { f: 'can_send', label: 'Can send from website', type: 'bool' },
+      { f: 'allowed_groups', label: 'May send to', type: 'groups', hint: 'Tick ALL for every group. Ignored for owners.' },
+      { f: 'created_at', label: 'Added', type: 'date', edit: false }],
+    defaults: { role: 'admin', can_send: false, allowed_groups: [] } },
 
   numbers: { title: 'Phone Numbers', icon: '☎️', table: 'twilio_numbers', scope: 'org', order: ['is_primary', false], readOnly: true,
     desc: 'Your organization\'s numbers. Texting any of them reaches this system. Contact us to add a number.',
@@ -357,6 +360,11 @@ const VIEWS = {
   p_costs: { title: 'Costs', icon: '🧮', table: 'cost_assumptions', scope: 'platform', order: ['item', true], soft: true, platform: true,
     cols: [{ f: 'item', label: 'Item', req: true }, { f: 'value', label: 'Value', type: 'money' }, { f: 'unit', label: 'Unit' }, { f: 'notes', label: 'Notes' }] },
 
+  p_settings: { title: 'System Settings', icon: '🔧', table: 'app_settings', scope: 'platform', order: ['key', true], platform: true, noAdd: true,
+    desc: 'Connection between the website and n8n. Paste the Production URL of the "Send Now (from website)" node here.',
+    cols: [{ f: 'key', label: 'Setting', edit: false }, { f: 'value', label: 'Value', render: (v, r) => r.key === 'dispatch_secret' ? '<span class="muted">•••••• (click Edit to view)</span>' : esc(v) },
+      { f: 'notes', label: 'Notes', edit: false }] },
+
   p_numbers: { title: 'All Phone Numbers', icon: '☎️', table: 'twilio_numbers', scope: 'platform', order: ['number', true], soft: true, platform: true,
     desc: 'Every Twilio number. Point each one\'s Messaging webhook at your n8n URL.',
     cols: [{ f: 'number', label: 'Number', type: 'phone', req: true }, { f: 'org_id', label: 'Organization', type: 'select', opts: () => S.orgs.map(o => o.id), req: true, render: v => esc(orgName(v)) },
@@ -397,12 +405,12 @@ function complianceCols(platform) {
    NAV
    ============================================================ */
 const NAV_ORG = [
-  ['overview', '🏠', 'Overview'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['history'], ['replies'],
+  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['history'], ['replies'],
   ['signup_requests'], ['opt_outs'], ['inbound'], ['h', 'Organization'], ['settings', '⚙️', 'Settings'], ['registration', '🪪', 'Texting Registration'],
   ['admins'], ['numbers'], ['audit'],
 ];
 const NAV_PLATFORM = [['h', 'Platform owner'], ['p_orgs'], ['p_signups'], ['p_usage'], ['p_invoices'], ['p_plans'], ['p_compliance'], ['p_numbers'],
-  ['p_setup'], ['p_leads'], ['p_support'], ['p_tests'], ['p_roadmap'], ['p_costs']];
+  ['p_setup'], ['p_leads'], ['p_support'], ['p_tests'], ['p_roadmap'], ['p_costs'], ['p_settings']];
 
 function renderNav() {
   const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])];
@@ -553,7 +561,7 @@ async function overviewPage() {
   if (o.paid_until && new Date(o.paid_until) < new Date()) warn.push(`Payment was due ${esc(fmtD(o.paid_until))}.`);
   if (lim && pct >= 80) warn.push(`You've used ${pct}% of this month's messages.`);
   main.innerHTML = head(o.name, `${plan ? plan.name + ' plan' : ''}${o.paid_until ? ' · paid until ' + fmtD(o.paid_until) : ''}`,
-      '<a class="btn secondary" href="#scheduled">Schedule a message</a><a class="btn" href="#contacts">Contacts</a>') +
+      '<a class="btn secondary" href="#scheduled">Schedule</a><a class="btn" href="#send">✉️ Send a message</a>') +
     (warn.length ? `<div class="card panel" style="margin-bottom:16px;border-color:#efd9a8;background:#fffaf0">${warn.map(w => `<div style="padding:3px 0">⚠️ ${w}</div>`).join('')}</div>` : '') +
     `<div class="stats">
       <div class="card stat"><div class="k">Active contacts</div><div class="v">${num(active)}</div>${o.contact_limit ? `<div class="bar ${cpct >= 100 ? 'bad' : cpct >= 80 ? 'warn' : ''}"><span style="width:${cpct}%"></span></div><div class="small muted" style="margin-top:6px">${num(active)} of ${num(o.contact_limit)} · ${num(calls)} by phone call</div>` : ''}</div>
@@ -626,6 +634,120 @@ async function registrationPage() {
     readonly: `<div class="card panel" style="margin-bottom:16px">Status: ${pill(row.a2p_status)} <span class="muted small">· Approval usually takes 1–3 weeks after submission.</span></div>` });
 }
 
+
+/* ============================================================
+   SEND MESSAGE + SMS SEGMENT CALCULATOR
+   ============================================================ */
+const GSM_BASIC = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+const GSM_EXT = '^{}\\[~]|€\f';
+const SMART = { '‘': "'", '’': "'", '‚': "'", '‛': "'", '“': '"', '”': '"', '„': '"', '″': '"', '′': "'", '–': '-', '—': '-', '−': '-',
+  '…': '...', ' ': ' ', ' ': ' ', '​': '', '•': '-', '·': '-', '«': '"', '»': '"', '´': "'", '`': "'" };
+
+function segInfo(text) {
+  const chars = [...text];
+  let septets = 0, gsm = true; const bad = new Set();
+  for (const c of chars) {
+    if (GSM_BASIC.includes(c)) septets += 1;
+    else if (GSM_EXT.includes(c)) septets += 2;
+    else { gsm = false; bad.add(c); }
+  }
+  const units = text.length; // UTF-16 code units (emoji = 2)
+  if (!text) return { encoding: 'GSM-7', chars: 0, segments: 0, perSeg: 160, remaining: 160, bad: [], units: 0 };
+  if (gsm) {
+    const single = septets <= 160, per = single ? 160 : 153, segs = single ? 1 : Math.ceil(septets / 153);
+    return { encoding: 'GSM-7', chars: septets, segments: segs, perSeg: per, remaining: segs * per - septets, bad: [], units };
+  }
+  const single = units <= 70, per = single ? 70 : 67, segs = single ? 1 : Math.ceil(units / 67);
+  return { encoding: 'UCS-2 (Unicode)', chars: units, segments: segs, perSeg: per, remaining: segs * per - units, bad: [...bad], units };
+}
+const fixSmart = t => [...t].map(c => SMART[c] ?? c).join('');
+
+async function sendPage() {
+  const o = S.org;
+  const { data: myGroups } = await sb.rpc('my_send_groups', { p_org: o.id });
+  const allowed = myGroups || [];
+  const groups = allowed.includes('ALL') ? groupOpts() : allowed;
+  const main = $('#main');
+  if (!groups.length) {
+    main.innerHTML = head('Send Message') + `<div class="card panel"><p>You don't have permission to send messages from the website.</p>
+      <p class="muted">Ask an owner to turn on <b>Can send from website</b> for you on the Website Admins page.</p></div>`; return;
+  }
+  main.innerHTML = head('Send Message', 'Send an announcement right now. Texts and calls go out within seconds.') + `
+  <div class="two">
+    <form class="card panel" id="sendf" novalidate>
+      <div class="grid2">
+        <div class="field"><label>To group</label><select name="group">${groups.map(g => `<option>${esc(g)}</option>`).join('')}</select></div>
+        <div class="field"><label>How</label><select name="mode">
+          <option value="PREF">By each member's preference (text or call)</option><option value="TEXT">Text only</option>
+          <option value="CALL">Phone call only</option><option value="EMERGENCY">🚨 Emergency (ignores quiet hours)</option></select></div>
+      </div>
+      <div class="field"><label>Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
+        <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div></div>
+      <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="muted small">${o.confirmation_required ? 'You\'ll confirm before it goes out.' : ''}</span>
+        <button class="btn gold" type="submit" id="sendbtn">Review & send</button></div>
+    </form>
+    <div class="card panel">
+      <h3>Message calculator</h3>
+      <div class="kv" id="calc"></div>
+      <div style="margin:14px 0 6px;font-weight:600;font-size:13px;color:var(--ink-2)">Who will receive it</div>
+      <div class="kv" id="reach"><div>Recipients</div><div class="muted">…</div></div>
+      <p class="small muted" style="margin:14px 0 0">Carriers bill texts per <b>segment</b>. A segment is 160 plain characters, or 70 if the message has an emoji or special character. Long messages are split into 153 / 67-character parts.</p>
+    </div>
+  </div>`;
+  const f = $('#sendf'); let reach = null;
+  const draw = () => {
+    const t = f.msg.value; const i = segInfo(t); const mode = f.mode.value;
+    const sms = reach ? reach.sms : 0, calls = reach ? reach.calls : 0;
+    $('#calc').innerHTML = `
+      <div>Encoding</div><div>${i.encoding === 'GSM-7' ? '<span class="pill ok">GSM-7 (standard)</span>' : '<span class="pill warn">Unicode</span>'}</div>
+      <div>Characters</div><div>${num(i.chars)}${i.encoding !== 'GSM-7' ? ` <span class="muted small">(${num([...t].length)} typed)</span>` : ''}</div>
+      <div>Segments per text</div><div><b style="font-size:20px">${i.segments}</b> <span class="muted small">· up to ${i.perSeg} chars each</span></div>
+      <div>Remaining</div><div>${num(i.remaining)} characters before the next segment</div>
+      <div>Non-GSM characters</div><div>${i.bad.length ? i.bad.map(c => `<code style="background:#fff3d6;padding:0 5px;border-radius:4px">${esc(c === ' ' ? '␠' : c)}</code>`).join(' ') : '<span class="muted">None detected</span>'}</div>`;
+    $('#reach').innerHTML = reach ? `
+      <div>Texts</div><div><b>${num(sms)}</b> people</div>
+      <div>Phone calls</div><div><b>${num(calls)}</b> people</div>
+      ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
+      <div>Total segments</div><div><b>${num(sms * i.segments)}</b> <span class="muted small">(${num(sms)} × ${i.segments})</span></div>
+      ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
+    const bc = $('#badchars');
+    if (i.bad.length && i.bad.some(c => SMART[c] !== undefined)) {
+      bc.style.display = ''; bc.innerHTML = `Some characters (like curly quotes) force Unicode and can double the cost.
+        <button type="button" class="btn secondary sm" id="fixbtn" style="margin-left:8px">Fix characters</button>`;
+      $('#fixbtn').onclick = () => { f.msg.value = fixSmart(f.msg.value); draw(); };
+    } else if (i.bad.length) { bc.style.display = ''; bc.textContent = 'This message has emoji or special characters, so each segment holds 70 characters instead of 160.'; }
+    else bc.style.display = 'none';
+    $('#callnote').style.display = mode === 'CALL' || (calls > 0 && mode !== 'TEXT') ? '' : 'none';
+  };
+  const loadReach = async () => {
+    const mode = f.mode.value;
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' });
+    reach = error ? null : data; draw();
+  };
+  f.msg.addEventListener('input', draw);
+  f.group.addEventListener('change', loadReach); f.mode.addEventListener('change', loadReach);
+  loadReach();
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const t = f.msg.value.trim(); if (!t) return toast('Write a message first', true);
+    if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
+    const i = segInfo(t), mode = f.mode.value;
+    const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
+      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * i.segments)} segments<br><br>
+       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(t)}</span>`, 'Send now', false);
+    if (!ok) return;
+    $('#sendbtn').disabled = true;
+    const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: t,
+      p_mode: mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' });
+    $('#sendbtn').disabled = false;
+    if (res.error) return toast(res.error.message, true);
+    toast('Sending now. It will appear in History in a moment.');
+    f.msg.value = ''; draw();
+  });
+}
+
 /* ----- platform helpers ----- */
 function signupDetails(r) {
   const c = r.compliance || {};
@@ -662,13 +784,14 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = key === 'overview' || key === 'settings' || key === 'registration' || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   if (!S.org && !VIEWS[S.view]?.platform) { $('#main').innerHTML = head('Welcome', 'No organization yet. Create one under All Organizations.'); return; }
   T.q = T.sortKey === S.view ? T.q : '';
   if (S.view === 'overview') return overviewPage();
   if (S.view === 'settings') return settingsPage();
+  if (S.view === 'send') return sendPage();
   if (S.view === 'registration') return registrationPage();
   return tablePage(S.view);
 }

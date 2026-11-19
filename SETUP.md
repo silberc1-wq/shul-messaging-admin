@@ -10,13 +10,17 @@ Supabase → **Authentication → URL Configuration**
 Recommended: Authentication → **Emails → SMTP Settings**. Connect a sender like Resend or Postmark. The built-in sender only allows a few emails per hour.
 
 ## 2. n8n
-1. Import `n8n/communityconnect.n8n.json`.
-2. **Config** node: paste your Twilio Account SID (starts with `AC`).
+1. Import the workflow file Claude sent you (`communityconnect-PRIVATE.n8n.json`; it has your secret filled in). The copy in this repo has placeholders, because this repo is public.
+2. **Config** node:
+   - `twilioAccountSid` and `twilioAuthToken` (Twilio Console home page).
+   - `dispatchSecret`: already filled in the private file. Otherwise copy `dispatch_secret` from admin site → Platform → System Settings.
 3. Create credentials:
    - **Supabase API**: Host `https://zuyqaicvnpwqawfxakjg.supabase.co`, Service Role Secret from Supabase → Project Settings → API Keys (secret key). Never put this key on the website.
    - **Twilio API**: Account SID + Auth Token.
    - **Stripe API**: only if you take payments.
-4. Activate the workflow and copy the **Production URL** of the *Twilio Inbound SMS* node.
+4. **Activate**, then:
+   - Copy the **Production URL** of *Twilio Inbound SMS* into Config → `inboundWebhookUrl` (exactly). n8n uses it to verify that every incoming text really comes from Twilio; anything else is ignored.
+   - Copy the **Production URL** of *Send Now (from website)* into admin site → Platform → **System Settings** → `dispatch_webhook_url`. Messages sent from the website then go out within seconds.
 
 ## 3. Twilio
 - For **each** number: Phone Numbers → (number) → Messaging → *A message comes in* → **Webhook**, `HTTP POST`, paste the n8n Production URL.
