@@ -33,7 +33,7 @@ function check(res, okMsg) {
 }
 
 // ---------- state ----------
-const S = { user: null, isPlatform: false, orgs: [], org: null, groups: [], view: 'overview', badges: {} };
+const S = { user: null, isPlatform: false, orgs: [], org: null, groups: [], view: 'overview', badges: {}, perms: {} };
 
 // ---------- status colors ----------
 const STATUS = {
@@ -140,7 +140,7 @@ const groupOpts = () => ['ALL', ...S.groups.filter(g => g.active && g.code !== '
 
 const VIEWS = {
   // ----- organization -----
-  contacts: { title: 'Contacts', icon: '👥', table: 'contacts', scope: 'org', order: ['name', true], soft: true,
+  contacts: { title: 'Contacts', perm: 'contacts', icon: '👥', table: 'contacts', scope: 'org', order: ['name', true], soft: true,
     desc: 'Everyone who receives announcements. Choose TEXT or CALL for each person.',
     cols: [
       { f: 'name', label: 'Name', req: true }, { f: 'phone', label: 'Phone', type: 'phone' },
@@ -152,7 +152,7 @@ const VIEWS = {
       { f: 'created_at', label: 'Added', type: 'date', edit: false },
     ], defaults: { method: 'TEXT', active: true, language: 'English', signup_source: 'Website' } },
 
-  groups: { title: 'Groups', icon: '🗂️', table: 'groups', scope: 'org', order: ['code', true], soft: true,
+  groups: { title: 'Groups', perm: 'contacts', icon: '🗂️', table: 'groups', scope: 'org', order: ['code', true], soft: true,
     desc: 'Departments and lists. Texters can send to a group by its code, e.g. SEND WOMEN …',
     cols: [
       { f: 'code', label: 'Code', req: true, hint: 'One word, e.g. WOMEN, BOARD, YOUTH' }, { f: 'name', label: 'Name' },
@@ -163,7 +163,7 @@ const VIEWS = {
     after: async rows => { const { data } = await sb.from('contacts').select('groups').eq('org_id', S.org.id).eq('active', true).is('deleted_at', null);
       rows.forEach(r => r._members = r.code === 'ALL' ? (data || []).length : (data || []).filter(c => (c.groups || []).includes(r.code)).length); } },
 
-  controllers: { title: 'Texters', icon: '📱', table: 'controllers', scope: 'org', order: ['name', true], soft: true,
+  controllers: { title: 'Texters', perm: 'texters', icon: '📱', table: 'controllers', scope: 'org', order: ['name', true], soft: true,
     desc: 'Phones allowed to send announcements by text. FULL ADMIN can send to every group; GROUP ADMIN only to the allowed groups.',
     cols: [
       { f: 'name', label: 'Name', req: true }, { f: 'phone', label: 'Phone', type: 'phone', req: true },
@@ -172,7 +172,7 @@ const VIEWS = {
       { f: 'active', label: 'Active', type: 'bool' }, { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ], defaults: { role: 'GROUP ADMIN', active: true } },
 
-  pending: { title: 'Pending', icon: '⏳', table: 'pending_messages', scope: 'org', order: ['created_at', false], soft: true, noAdd: true, noEdit: true,
+  pending: { title: 'Pending', perm: 'send', icon: '⏳', table: 'pending_messages', scope: 'org', order: ['created_at', false], soft: true, noAdd: true, noEdit: true,
     desc: 'Commands waiting for a YES, plus everything confirmed or cancelled.',
     cols: [
       { f: 'created_at', label: 'Received', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Command', type: 'status' },
@@ -182,7 +182,7 @@ const VIEWS = {
     rowActions: r => r.status === 'PENDING CONFIRMATION' ? [{ label: 'Cancel', danger: true, run: async () => {
       check(await sb.from('pending_messages').update({ status: 'CANCELLED', confirmed_at: new Date().toISOString() }).eq('id', r.id), 'Cancelled'); } }] : [] },
 
-  scheduled: { title: 'Scheduled', icon: '⏰', table: 'scheduled_messages', scope: 'org', order: ['scheduled_for', false], soft: true,
+  scheduled: { title: 'Scheduled', perm: 'send', icon: '⏰', table: 'scheduled_messages', scope: 'org', order: ['scheduled_for', false], soft: true,
     desc: 'Messages that go out automatically at a set time (checked every 5 minutes).',
     cols: [
       { f: 'scheduled_for', label: 'Send at', type: 'datetime', req: true },
@@ -196,7 +196,7 @@ const VIEWS = {
       if (row.scheduled_for && new Date(row.scheduled_for) < new Date()) { toast('Pick a time in the future', true); return false; } },
     canEdit: r => ['SCHEDULED', 'PENDING'].includes(r.status) },
 
-  history: { title: 'History', icon: '📜', table: 'message_history', scope: 'org', order: ['created_at', false], readOnly: true,
+  history: { title: 'History', needs: 'history', icon: '📜', table: 'message_history', scope: 'org', order: ['created_at', false], readOnly: true,
     desc: 'Every announcement that went out.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status' },
@@ -205,7 +205,7 @@ const VIEWS = {
       { f: 'calls_made', label: 'Calls', type: 'number' }, { f: 'failed_count', label: 'Failed', type: 'number' }, { f: 'status', label: 'Status', type: 'status' },
     ] },
 
-  replies: { title: 'Replies', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
+  replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'Messages members texted back. They are also forwarded to the office phone in Settings.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name', label: 'Name', edit: false }, { f: 'phone', label: 'Phone', type: 'phone', edit: false },
@@ -214,7 +214,7 @@ const VIEWS = {
     ],
     rowActions: r => r.status !== 'HANDLED' ? [{ label: 'Mark handled', run: async () => check(await sb.from('replies').update({ status: 'HANDLED' }).eq('id', r.id), 'Marked handled') }] : [] },
 
-  signup_requests: { title: 'Signup Requests', icon: '🙋', table: 'signup_requests', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
+  signup_requests: { title: 'Signup Requests', perm: 'contacts', icon: '🙋', table: 'signup_requests', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'People who texted JOIN (when auto-signup is off). Approve to add them to Contacts.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name_given', label: 'Name' }, { f: 'phone', label: 'Phone', type: 'phone' },
@@ -230,25 +230,31 @@ const VIEWS = {
     cols: [{ f: 'created_at', label: 'When', type: 'datetime' }, { f: 'name', label: 'Name' }, { f: 'phone', label: 'Phone', type: 'phone' },
       { f: 'original_groups', label: 'Groups they were in' }, { f: 'status', label: 'Status', type: 'status' }] },
 
-  inbound: { title: 'Inbound Log', icon: '📥', table: 'inbound_messages', scope: 'org', order: ['created_at', false], readOnly: true,
+  inbound: { title: 'Inbound Log', needs: 'history', icon: '📥', table: 'inbound_messages', scope: 'org', order: ['created_at', false], readOnly: true,
     desc: 'Every text the system received and what it did.',
     cols: [{ f: 'created_at', label: 'When', type: 'datetime' }, { f: 'from_phone', label: 'From', type: 'phone' }, { f: 'body', label: 'Message', type: 'longtext' },
       { f: 'route', label: 'Result', type: 'status' }, { f: 'reply', label: 'Reply sent', type: 'longtext' }] },
 
-  admins: { title: 'Website Admins', icon: '🔑', table: 'org_admins', scope: 'org', order: ['email', true], soft: true,
-    desc: 'Who can sign in to this website for this organization. Owners can add and remove admins.',
+  admins: { title: 'Website Admins', perm: 'owner', icon: '🔑', table: 'org_admins', scope: 'org', order: ['email', true], soft: true,
+    desc: 'Who can sign in for this organization. The owner (main login) can do everything and can add employees with only the rights you choose.',
     cols: [{ f: 'email', label: 'Email', type: 'email', req: true }, { f: 'name', label: 'Name' },
       { f: 'role', label: 'Role', type: 'select', opts: ['admin', 'owner'], req: true, render: v => pill(v), hint: 'Owners can send to every group and manage admins.' },
+      { f: 'perm_contacts', label: 'Manage contacts & groups', type: 'bool', table: false },
+      { f: 'perm_texters', label: 'Manage texters (who can text-send)', type: 'bool', table: false },
+      { f: 'perm_settings', label: 'Change settings', type: 'bool', table: false },
+      { f: 'perm_history', label: 'See history & logs', type: 'bool', table: false },
       { f: 'can_send', label: 'Can send from website', type: 'bool' },
       { f: 'allowed_groups', label: 'May send to', type: 'groups', hint: 'Tick ALL for every group. Ignored for owners.' },
+      { f: 'rights', label: 'Can do', edit: false, render: (v, r) => r.role === 'owner' ? '<span class="pill gold">Everything</span>' :
+          [r.perm_contacts && 'Contacts', r.perm_texters && 'Texters', r.perm_settings && 'Settings', r.perm_history && 'History'].filter(Boolean).map(x => `<span class="chip">${x}</span>`).join('') || '<span class="muted small">View only</span>' },
       { f: 'created_at', label: 'Added', type: 'date', edit: false }],
-    defaults: { role: 'admin', can_send: false, allowed_groups: [] } },
+    defaults: { role: 'admin', can_send: false, allowed_groups: [], perm_contacts: true, perm_texters: false, perm_settings: false, perm_history: true } },
 
   numbers: { title: 'Phone Numbers', icon: '☎️', table: 'twilio_numbers', scope: 'org', order: ['is_primary', false], readOnly: true,
     desc: 'Your organization\'s numbers. Texting any of them reaches this system. Contact us to add a number.',
     cols: [{ f: 'number', label: 'Number', type: 'phone' }, { f: 'label', label: 'Label' }, { f: 'is_primary', label: 'Main', type: 'bool' }, { f: 'status', label: 'Status', type: 'status' }] },
 
-  audit: { title: 'Change Log', icon: '🕓', table: 'audit_log', scope: 'org', order: ['changed_at', false], readOnly: true,
+  audit: { title: 'Change Log', needs: 'history', icon: '🕓', table: 'audit_log', scope: 'org', order: ['changed_at', false], readOnly: true,
     desc: 'Every change ever made, with who made it and the old value. Nothing is lost.',
     cols: [{ f: 'changed_at', label: 'When', type: 'datetime' }, { f: 'changed_by', label: 'By' }, { f: 'table_name', label: 'What', render: v => esc(TABLE_NAMES[v] || v) },
       { f: 'action', label: 'Action', render: (v, r) => pill(r.new_data?.deleted_at && !r.old_data?.deleted_at ? 'DELETED' : v === 'INSERT' ? 'ADDED' : 'CHANGED') },
@@ -365,6 +371,12 @@ const VIEWS = {
     cols: [{ f: 'key', label: 'Setting', edit: false }, { f: 'value', label: 'Value', render: (v, r) => r.key === 'dispatch_secret' ? '<span class="muted">•••••• (click Edit to view)</span>' : esc(v) },
       { f: 'notes', label: 'Notes', edit: false }] },
 
+  p_staff: { title: 'Staff', icon: '🧑‍💼', table: 'platform_admins', scope: 'platform', order: ['email', true], platform: true, perm: 'platform_owner', hardDelete: true,
+    desc: 'You and your team. Staff can see and manage every organization; only owners can add or remove staff.',
+    cols: [{ f: 'email', label: 'Email', type: 'email', req: true }, { f: 'name', label: 'Name' },
+      { f: 'role', label: 'Role', type: 'select', opts: ['staff', 'owner'], req: true, render: v => pill(v) }, { f: 'created_at', label: 'Added', type: 'date', edit: false }],
+    defaults: { role: 'staff' } },
+
   p_numbers: { title: 'All Phone Numbers', icon: '☎️', table: 'twilio_numbers', scope: 'platform', order: ['number', true], soft: true, platform: true,
     desc: 'Every Twilio number. Point each one\'s Messaging webhook at your n8n URL.',
     cols: [{ f: 'number', label: 'Number', type: 'phone', req: true }, { f: 'org_id', label: 'Organization', type: 'select', opts: () => S.orgs.map(o => o.id), req: true, render: v => esc(orgName(v)) },
@@ -410,10 +422,11 @@ const NAV_ORG = [
   ['admins'], ['numbers'], ['audit'],
 ];
 const NAV_PLATFORM = [['h', 'Platform owner'], ['p_orgs'], ['p_signups'], ['p_usage'], ['p_invoices'], ['p_plans'], ['p_compliance'], ['p_numbers'],
-  ['p_setup'], ['p_leads'], ['p_support'], ['p_tests'], ['p_roadmap'], ['p_costs'], ['p_settings']];
+  ['p_setup'], ['p_leads'], ['p_support'], ['p_tests'], ['p_roadmap'], ['p_costs'], ['p_staff'], ['p_settings']];
 
+const canWrite = v => !v.readOnly && (!v.perm || !!S.perms[v.perm]);
 function renderNav() {
-  const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])];
+  const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])].filter(([k]) => !VIEWS[k]?.needs || S.perms[VIEWS[k].needs]);
   $('#nav').innerHTML = items.map(([k, icon, label]) => {
     if (k === 'h') return `<div class="nav-h">${esc(icon)}</div>`;
     const v = VIEWS[k] || {}; const b = S.badges[k];
@@ -433,7 +446,7 @@ async function tablePage(key) {
   const v = VIEWS[key];
   T.sort = T.sortKey === key ? T.sort : v.order; T.sortKey = key;
   const main = $('#main');
-  main.innerHTML = `${head(v.title, v.desc, `${!v.readOnly && !v.noAdd ? '<button class="btn" id="add">+ Add</button>' : ''}`)}
+  main.innerHTML = `${head(v.title, v.desc, `${canWrite(v) && !v.noAdd ? '<button class="btn" id="add">+ Add</button>' : ''}`)}
     <div class="toolbar"><input type="search" id="q" placeholder="Search…" value="${esc(T.q)}">
       ${v.soft ? `<label class="inline"><input type="checkbox" id="showdel" ${T.showDeleted ? 'checked' : ''}> Show deleted</label>` : ''}
       <span class="spacer"></span><span class="muted small" id="count"></span><button class="btn secondary sm" id="csv">Export CSV</button></div>
@@ -460,13 +473,13 @@ function drawTable(key) {
   if (T.sort) { const [f, asc] = T.sort; rows.sort((a, b) => { const x = a[f] ?? '', y = b[f] ?? ''; return (x > y ? 1 : x < y ? -1 : 0) * (asc ? 1 : -1); }); }
   $('#count').textContent = `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`;
   if (!rows.length) { $('#tbl').innerHTML = `<div class="empty">${T.q ? 'No matches.' : 'Nothing here yet.'}</div>`; return; }
-  const canEdit = r => !v.readOnly && !v.noEdit && !r.deleted_at && (!v.canEdit || v.canEdit(r));
+  const canEdit = r => canWrite(v) && !v.noEdit && !r.deleted_at && (!v.canEdit || v.canEdit(r));
   $('#tbl').innerHTML = `<table class="data"><thead><tr>${cols.map(c => `<th data-sort="${esc(c.f)}">${esc(c.label)}${T.sort && T.sort[0] === c.f ? (T.sort[1] ? ' ▲' : ' ▼') : ''}</th>`).join('')}<th></th></tr></thead>
     <tbody>${rows.map(r => `<tr class="${r.deleted_at ? 'deleted' : ''}" data-id="${esc(r.id ?? r.org_id)}">${cols.map(c => `<td>${cell(c, r)}</td>`).join('')}
-      <td class="actions">${(v.rowActions ? v.rowActions(r) : []).map((a, i) => `<button class="btn ${a.danger ? 'danger' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join(' ')}
+      <td class="actions">${(v.rowActions && (canWrite(v) || v.readOnly || v.platform) ? v.rowActions(r) : []).map((a, i) => `<button class="btn ${a.danger ? 'danger' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join(' ')}
       ${r.deleted_at ? '<button class="btn secondary sm" data-restore>Restore</button>' : ''}
       ${canEdit(r) ? '<button class="btn ghost sm" data-edit>Edit</button>' : ''}
-      ${v.soft && !v.readOnly && !r.deleted_at ? '<button class="btn ghost sm" data-del title="Delete">🗑</button>' : ''}</td></tr>`).join('')}</tbody></table>`;
+      ${(v.soft || v.hardDelete) && canWrite(v) && !r.deleted_at ? '<button class="btn ghost sm" data-del title="Delete">🗑</button>' : ''}</td></tr>`).join('')}</tbody></table>`;
   $('#tbl thead').onclick = e => { const th = e.target.closest('[data-sort]'); if (!th) return; const f = th.dataset.sort;
     T.sort = T.sort && T.sort[0] === f ? [f, !T.sort[1]] : [f, true]; drawTable(key); };
   $('#tbl tbody').onclick = async e => {
@@ -475,7 +488,7 @@ function drawTable(key) {
     if (!btn) { if (canEdit(r)) editRow(key, r); return; }
     if (btn.dataset.edit !== undefined) return editRow(key, r);
     if (btn.dataset.del !== undefined) {
-      if (!(await confirmBox('Delete?', 'It will be hidden but can always be restored from "Show deleted".', 'Delete'))) return;
+      if (!(await confirmBox('Delete?', v.hardDelete ? 'This removes their access (the change log keeps a record).' : 'It will be hidden but can always be restored from "Show deleted".', 'Delete'))) return;
       check(await sb.from(v.table).delete().eq('id', r.id), 'Deleted'); return tablePage(key);
     }
     if (btn.dataset.restore !== undefined) { check(await sb.from(v.table).update({ deleted_at: null }).eq('id', r.id), 'Restored'); return tablePage(key); }
@@ -603,10 +616,11 @@ const SETTINGS_COLS = [
   { f: 'contact_person', label: 'Main contact person' }, { f: 'contact_phone', label: 'Main contact phone', type: 'phone' }, { f: 'contact_email', label: 'Main contact email', type: 'email' },
 ];
 
-function recordForm({ title, desc, cols, row, table, idField = 'id', readonly = '', extra = '' }) {
+function recordForm({ title, desc, cols, row, table, idField = 'id', readonly = '', extra = '', locked = false }) {
   $('#main').innerHTML = head(title, desc) + readonly + `<form class="card panel" id="rec" novalidate><div class="grid2">${cols.filter(c => c.edit !== false).map(c => `<div class="field" style="${['longtext'].includes(c.type) ? 'grid-column:1/-1' : ''}">
       <label>${esc(c.label)}</label>${input(c, row[c.f])}${c.hint ? `<div class="hint">${esc(c.hint)}</div>` : ''}</div>`).join('')}</div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--line);padding-top:16px;margin-top:6px"><button class="btn" type="submit">Save changes</button></div></form>${extra}`;
+    ${locked ? '<p class="muted small" style="margin:6px 0 0">View only: ask your organization\'s owner if you need to change these.</p>' : '<div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--line);padding-top:16px;margin-top:6px"><button class="btn" type="submit">Save changes</button></div>'}</form>${extra}`;
+  if (locked) $$('#rec input, #rec select, #rec textarea').forEach(el => (el.disabled = true));
   $('#rec').addEventListener('submit', async e => {
     e.preventDefault(); const vals = readForm(e.target, cols.filter(c => c.edit !== false));
     check(await sb.from(table).update(vals).eq(idField, row[idField]), 'Saved');
@@ -617,7 +631,7 @@ function recordForm({ title, desc, cols, row, table, idField = 'id', readonly = 
 async function settingsPage() {
   const o = (await sb.from('organizations').select('*').eq('id', S.org.id).single()).data;
   const plan = S.plans.find(p => p.id === o.plan_id);
-  recordForm({ title: 'Settings', desc: 'How your organization\'s messaging behaves.', cols: SETTINGS_COLS, row: o, table: 'organizations',
+  recordForm({ title: 'Settings', desc: 'How your organization\'s messaging behaves.', cols: SETTINGS_COLS, row: o, table: 'organizations', locked: !S.perms.settings,
     readonly: `<div class="card panel" style="margin-bottom:16px"><div class="kv">
       <div>Organization number</div><div><b>${esc(fmtPhone(o.twilio_number))}</b></div>
       <div>Plan</div><div>${esc(plan?.name || o.plan || '—')} · ${esc((o.billing_period || '').toLowerCase())}</div>
@@ -628,9 +642,9 @@ async function settingsPage() {
 
 async function registrationPage() {
   let row = (await sb.from('org_compliance').select('*').eq('org_id', S.org.id).maybeSingle()).data;
-  if (!row) { check(await sb.from('org_compliance').insert({ org_id: S.org.id, legal_name: S.org.name })); row = (await sb.from('org_compliance').select('*').eq('org_id', S.org.id).single()).data; }
+  if (!row && S.perms.settings) { check(await sb.from('org_compliance').insert({ org_id: S.org.id, legal_name: S.org.name })); row = (await sb.from('org_compliance').select('*').eq('org_id', S.org.id).single()).data; }
   recordForm({ title: 'Texting Registration', desc: 'US phone carriers require every organization that sends texts to register (A2P 10DLC). Fill this in once and we\'ll submit it for you.',
-    cols: complianceCols(S.isPlatform).filter(c => c.f !== 'org_id'), row, table: 'org_compliance',
+    cols: complianceCols(S.isPlatform).filter(c => c.f !== 'org_id'), row, table: 'org_compliance', locked: !S.perms.settings,
     readonly: `<div class="card panel" style="margin-bottom:16px">Status: ${pill(row.a2p_status)} <span class="muted small">· Approval usually takes 1–3 weeks after submission.</span></div>` });
 }
 
@@ -806,6 +820,11 @@ async function loadOrgs() {
   S.org = pick; if (pick) sel.value = pick.id;
   sel.parentElement.classList.toggle('hidden', S.orgs.length < 2);
 }
+async function loadPerms() {
+  S.perms = { platform: S.isPlatform };
+  if (S.org) { const { data } = await sb.rpc('my_perms', { p_org: S.org.id }); S.perms = data || S.perms; }
+  else if (S.isPlatform) { const { data } = await sb.rpc('is_platform_owner'); S.perms.platform_owner = !!data; }
+}
 async function loadGroups() {
   if (!S.org) { S.groups = []; return; }
   const { data } = await sb.from('groups').select('code,active').eq('org_id', S.org.id).is('deleted_at', null).order('code');
@@ -825,7 +844,7 @@ function localStorageGet(k) { try { return localStorage.getItem(k); } catch { re
 function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { } }
 async function switchOrg(id) {
   S.org = S.orgs.find(o => o.id === id) || S.org; localStorageSet('shul_org', S.org?.id || '');
-  $('#org-select').value = S.org?.id || ''; await loadGroups(); await loadBadges(); render();
+  $('#org-select').value = S.org?.id || ''; await Promise.all([loadGroups(), loadPerms()]); await loadBadges(); render();
 }
 $('#org-select').addEventListener('change', e => switchOrg(e.target.value));
 
@@ -836,7 +855,7 @@ async function startApp(session) {
   S.isPlatform = !!pa.data; S.plans = plans.data || [];
   await loadOrgs();
   if (!S.orgs.length && !S.isPlatform) { show('#login', false); show('#app', false); show('#noaccess', true); return; }
-  await loadGroups(); await loadBadges();
+  await Promise.all([loadGroups(), loadPerms()]); await loadBadges();
   show('#login', false); show('#noaccess', false); show('#app', true);
   render();
 }
