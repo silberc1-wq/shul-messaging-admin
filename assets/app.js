@@ -452,6 +452,138 @@ document.addEventListener('click', e => {
 });
 
 /* ============================================================
+   IMPORT CONTACTS (Excel or CSV)
+   ============================================================ */
+function parseCSV(text) {
+  text = text.replace(/^﻿/, '');
+  const first = text.split(/\r?\n/)[0] || '';
+  const delim = (first.match(/\t/g) || []).length > (first.match(/,/g) || []).length ? '\t' : (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim() !== ''));
+}
+async function readSheet(file) {
+  if (/\.(xlsx|xls)$/i.test(file.name)) {
+    const XLSX = await import('https://esm.sh/xlsx@0.18.5');
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }).filter(r => r.some(x => String(x).trim() !== ''));
+  }
+  return parseCSV(await file.text());
+}
+const phoneDigits = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d.length === 10 && !/^[01]/.test(d) ? d : null; };
+function mapColumns(rows) {
+  const norm = h => String(h || '').toLowerCase().replace(/[^a-z]/g, '');
+  const pick = (hdr, keys) => hdr.findIndex(h => keys.includes(norm(h)));
+  const hdr = rows[0] || [];
+  const m = {
+    name: pick(hdr, ['name', 'fullname', 'contact', 'contactname', 'member', 'membername']),
+    first: pick(hdr, ['first', 'firstname', 'fname', 'given', 'givenname']),
+    last: pick(hdr, ['last', 'lastname', 'lname', 'surname', 'familyname']),
+    phone: pick(hdr, ['phone', 'phonenumber', 'mobile', 'mobilephone', 'cell', 'cellphone', 'cellnumber', 'number', 'tel', 'telephone', 'whatsapp']),
+    method: pick(hdr, ['method', 'type', 'preference', 'contactmethod', 'textorcall', 'via']),
+    groups: pick(hdr, ['groups', 'group', 'lists', 'list', 'department', 'departments', 'tags', 'category']),
+    language: pick(hdr, ['language', 'lang']),
+    notes: pick(hdr, ['notes', 'note', 'comments', 'comment']),
+  };
+  let header = m.phone >= 0 || m.name >= 0 || m.first >= 0;
+  if (m.phone < 0) { // no recognizable header: find the column that is mostly phone numbers
+    const sample = rows.slice(header ? 1 : 0, 30); const width = Math.max(...rows.map(r => r.length));
+    let best = -1, bestN = 0;
+    for (let c = 0; c < width; c++) { const n = sample.filter(r => phoneDigits(r[c])).length; if (n > bestN) { best = c; bestN = n; } }
+    m.phone = best;
+    if (!header && m.name < 0) { for (let c = 0; c < width; c++) if (c !== best && sample.some(r => /[a-z]/i.test(r[c] || ''))) { m.name = c; break; } }
+  }
+  return { m, header };
+}
+function importContacts() {
+  const groupOptions = S.groups.filter(g => g.active && g.code !== 'ALL').map(g => `<option>${esc(g.code)}</option>`).join('');
+  let parsed = [];
+  const f = modal('Import contacts', `
+    <p class="muted" style="margin-top:0">Upload an Excel (.xlsx) or CSV file with one person per row. Columns we recognize:
+      <b>Name</b> (or First / Last), <b>Phone</b>, and optionally <b>Method</b> (Text or Call), <b>Groups</b> (separated by commas), Language, Notes.
+      <a href="#" id="imp-sample">Download a sample file</a>.</p>
+    <div class="field"><input type="file" name="file" accept=".csv,.xlsx,.xls,.txt" required></div>
+    <div class="grid2">
+      <div class="field"><label>If Method is blank</label><select name="defmethod"><option value="TEXT">Text message</option><option value="CALL">Phone call</option></select></div>
+      <div class="field"><label>Also add everyone to group</label><select name="addgroup"><option value="">(none)</option>${groupOptions}</select></div>
+    </div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin-bottom:10px"><input type="checkbox" name="update" checked style="margin-top:3px">
+      Update people who are already in my contacts (matched by phone; their groups are added to, never removed)</label>
+    <div id="imp-preview"></div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin-top:12px"><input type="checkbox" name="consent" style="margin-top:3px">
+      I confirm everyone on this list agreed to receive messages from our organization. People who texted STOP are skipped automatically.</label>`,
+  { saveText: 'Import', wide: true, onSave: async form => {
+    if (!parsed.length) { toast('Choose a file first.', true); return false; }
+    if (!form.consent.checked) { toast('Please confirm these people agreed to receive messages.', true); return false; }
+    const def = form.defmethod.value, add = form.addgroup.value;
+    const rows = parsed.map(r => ({ ...r, method: r.method || def, groups: add ? [...new Set([...r.groups, add])] : r.groups }));
+    const tot = { added: 0, updated: 0, unchanged: 0, skipped_optout: 0, invalid: 0, duplicates: 0, new_groups: [] };
+    for (let i = 0; i < rows.length; i += 1000) {
+      const { data, error } = await sb.rpc('import_contacts', { p_org: S.org.id, p_rows: rows.slice(i, i + 1000), p_update: form.update.checked });
+      if (error) { toast(error.message, true); return false; }
+      for (const k in tot) tot[k] = k === 'new_groups' ? [...tot[k], ...(data[k] || [])] : tot[k] + (data[k] || 0);
+    }
+    const parts = [`${num(tot.added)} added`, `${num(tot.updated)} updated`];
+    if (tot.unchanged) parts.push(`${num(tot.unchanged)} already there`);
+    if (tot.skipped_optout) parts.push(`${num(tot.skipped_optout)} skipped (texted STOP)`);
+    if (tot.invalid + tot.duplicates) parts.push(`${num(tot.invalid + tot.duplicates)} skipped (bad or repeated number)`);
+    toast('Import done: ' + parts.join(' · ') + (tot.new_groups.length ? ` · new groups: ${tot.new_groups.join(', ')}` : ''));
+    await loadGroups(); tablePage('contacts');
+  } });
+  $('#imp-sample', f).addEventListener('click', e => {
+    e.preventDefault();
+    const csv = 'Name,Phone,Method,Groups\nMoshe Klein,(845) 555-0101,Text,"MEN, BOARD"\nSarah Klein,845-555-0102,Text,WOMEN\nYosef Gold,8455550103,Call,MEN\n';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'contacts-sample.csv'; a.click();
+  });
+  f.file.addEventListener('change', async () => {
+    const box = $('#imp-preview', f); parsed = [];
+    const file = f.file.files[0]; if (!file) { box.innerHTML = ''; return; }
+    box.innerHTML = '<p class="muted">Reading file…</p>';
+    let rows;
+    try { rows = await readSheet(file); } catch (err) { console.error(err); box.innerHTML = '<p style="color:var(--bad)">Could not read that file. Try saving it as CSV (in Excel: File → Save As → CSV) and upload again.</p>'; return; }
+    const { m, header } = mapColumns(rows);
+    if (m.phone < 0) { box.innerHTML = '<p style="color:var(--bad)">We couldn\'t find a phone number column. Make sure the file has a column named <b>Phone</b>.</p>'; return; }
+    const existing = new Set(T.rows.filter(r => !r.deleted_at).map(r => String(r.phone || '').replace(/\D/g, '').slice(-10)));
+    const seen = new Set(); let bad = [], dup = 0, upd = 0;
+    for (const r of rows.slice(header ? 1 : 0)) {
+      const cellv = i => i >= 0 ? String(r[i] ?? '').trim() : '';
+      const d = phoneDigits(cellv(m.phone));
+      const name = cellv(m.name) || [cellv(m.first), cellv(m.last)].filter(Boolean).join(' ');
+      if (!d) { bad.push(name || cellv(m.phone) || '(blank)'); continue; }
+      if (seen.has(d)) { dup++; continue; } seen.add(d);
+      if (existing.has(d)) upd++;
+      const mt = cellv(m.method).toLowerCase();
+      parsed.push({ name, phone: d, method: /call|voice|phone|landline/.test(mt) ? 'CALL' : mt ? 'TEXT' : '',
+        groups: cellv(m.groups).split(/[,;|/]+/).map(x => x.trim().toUpperCase().replace(/\s+/g, '_')).filter(x => x && x !== 'ALL'),
+        language: cellv(m.language), notes: cellv(m.notes) });
+    }
+    const known = new Set(S.groups.map(g => g.code));
+    const newGroups = [...new Set(parsed.flatMap(p => p.groups))].filter(g => !known.has(g) && /^[A-Z0-9_]{1,30}$/.test(g));
+    const limit = S.plans?.find(p => p.id === S.org.plan_id)?.contact_limit;
+    const after = existing.size + parsed.length - upd;
+    box.innerHTML = `<div class="card" style="padding:14px 16px;box-shadow:none;background:#fcfbf8">
+      <b>${num(parsed.length)} people ready</b>: ${num(parsed.length - upd)} new${upd ? `, ${num(upd)} already in your contacts` : ''}.
+      ${bad.length ? `<br><span style="color:var(--bad)">${num(bad.length)} row${bad.length > 1 ? 's' : ''} skipped, missing or bad phone number: ${esc(bad.slice(0, 5).join(', '))}${bad.length > 5 ? '…' : ''}</span>` : ''}
+      ${dup ? `<br><span class="muted">${num(dup)} repeated number${dup > 1 ? 's' : ''} in the file will be added once.</span>` : ''}
+      ${newGroups.length ? `<br><span class="muted">New groups will be created: ${esc(newGroups.join(', '))}</span>` : ''}
+      ${limit && after > limit ? `<br><span style="color:var(--warn)">Your plan includes ${num(limit)} contacts; after this import you'll have about ${num(after)}.</span>` : ''}
+      </div>
+      <div class="table-wrap" style="margin-top:10px"><table class="data"><thead><tr><th>Name</th><th>Phone</th><th>Method</th><th>Groups</th></tr></thead><tbody>
+      ${parsed.slice(0, 6).map(p => `<tr><td>${esc(p.name)}</td><td class="nowrap">${esc(fmtPhone(p.phone))}</td><td>${esc(p.method || f.defmethod.value)}</td><td>${p.groups.map(g => `<span class="chip">${esc(g)}</span>`).join('')}</td></tr>`).join('')}
+      </tbody></table></div>${parsed.length > 6 ? `<p class="small muted">…and ${num(parsed.length - 6)} more</p>` : ''}`;
+  });
+}
+
+/* ============================================================
    GENERIC TABLE PAGE
    ============================================================ */
 const T = { rows: [], q: '', showDeleted: false, sort: null };
@@ -460,7 +592,7 @@ async function tablePage(key) {
   const v = VIEWS[key];
   T.sort = T.sortKey === key ? T.sort : v.order; T.sortKey = key;
   const main = $('#main');
-  main.innerHTML = `${head(v.title, v.desc, `${canWrite(v) && !v.noAdd ? '<button class="btn" id="add">+ Add</button>' : ''}`)}
+  main.innerHTML = `${head(v.title, v.desc, `${key === 'contacts' && canWrite(v) ? '<button class="btn secondary" id="import">Import contacts</button>' : ''}${canWrite(v) && !v.noAdd ? '<button class="btn" id="add">+ Add</button>' : ''}`)}
     <div class="toolbar"><input type="search" id="q" placeholder="Search…" value="${esc(T.q)}">
       ${v.soft ? `<label class="inline"><input type="checkbox" id="showdel" ${T.showDeleted ? 'checked' : ''}> Show deleted</label>` : ''}
       <span class="spacer"></span><span class="muted small" id="count"></span><button class="btn secondary sm" id="csv">Export CSV</button></div>
@@ -468,6 +600,7 @@ async function tablePage(key) {
   $('#q').addEventListener('input', e => { T.q = e.target.value; drawTable(key); });
   $('#showdel')?.addEventListener('change', e => { T.showDeleted = e.target.checked; tablePage(key); });
   $('#add')?.addEventListener('click', () => editRow(key, null));
+  $('#import')?.addEventListener('click', () => importContacts());
   $('#csv').addEventListener('click', () => exportCsv(key));
 
   let q = sb.from(v.table).select('*').limit(5000);
