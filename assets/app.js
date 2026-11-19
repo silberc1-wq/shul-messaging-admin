@@ -883,14 +883,58 @@ async function startApp(session) {
 }
 
 // ---- auth ----
+const loginErr = msg => { const n = $('#login-error'); n.textContent = msg || ''; n.classList.toggle('hidden', !msg); };
+const backTo = () => location.origin + location.pathname;
+function loginSent(html) { $('#login-sent-text').innerHTML = html; show('#login-form', false); show('#login-sent', true); loginErr(''); }
 $('#login-form').addEventListener('submit', async e => {
-  e.preventDefault(); const email = $('#email').value.trim(); const btn = $('button', e.target); btn.disabled = true;
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true } });
-  btn.disabled = false;
-  if (error) return toast(error.message, true);
-  show('#login-form', false); show('#login-sent', true);
+  e.preventDefault(); loginErr('');
+  const email = $('#email').value.trim(), password = $('#password').value;
+  if (!email) return loginErr('Enter your email.');
+  if (!password) return loginErr('Enter your password, or use "Email me a sign-in link".');
+  const btn = $('button[type=submit]', e.target); btn.disabled = true; btn.textContent = 'Signing in…';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign in';
+  if (error) loginErr(/invalid login/i.test(error.message)
+    ? 'Wrong email or password. First time, or never set a password? Use "Email me a sign-in link" and you\'ll be asked to create one.'
+    : error.message);
+});
+$('#login-link').addEventListener('click', async e => {
+  const email = $('#email').value.trim(); if (!email) return loginErr('Enter your email first.');
+  e.target.disabled = true;
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: backTo(), shouldCreateUser: true } });
+  e.target.disabled = false;
+  if (error) return loginErr(error.message);
+  loginSent('✅ Check your inbox for the sign-in email and click the link. Open it in this same browser. It can take a minute; check Spam if you don\'t see it.');
+});
+$('#login-forgot').addEventListener('click', async e => {
+  const email = $('#email').value.trim(); if (!email) return loginErr('Enter your email above, then click "Forgot password?" again.');
+  e.target.disabled = true;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: backTo() });
+  e.target.disabled = false;
+  if (error) return loginErr(error.message);
+  loginSent('✅ If that email has an account, we sent a link to reset your password. Open it in this same browser, then choose a new password.');
 });
 $('#login-again').addEventListener('click', () => { show('#login-form', true); show('#login-sent', false); });
+
+// ---- set / change password (from the menu, or after a "Forgot password" link) ----
+function passwordModal(title = 'Set your password', intro = '') {
+  modal(title, `${intro}<p class="muted" style="margin-top:0">From now on you can sign in with <b>${esc(S.user?.email || '')}</b> and this password.</p>
+    <input type="email" autocomplete="username" value="${esc(S.user?.email || '')}" hidden>
+    <div class="field"><label>New password</label><input name="pw" type="password" autocomplete="new-password" minlength="8" required>
+      <div class="hint">At least 8 characters.</div></div>
+    <div class="field"><label>Type it again</label><input name="pw2" type="password" autocomplete="new-password" required></div>`,
+  { saveText: 'Save password', onSave: async f => {
+    const pw = f.pw.value, pw2 = f.pw2.value;
+    if (pw.length < 8) { toast('Use at least 8 characters.', true); return false; }
+    if (pw !== pw2) { toast("The two passwords don't match.", true); return false; }
+    const { error } = await sb.auth.updateUser({ password: pw, data: { password_set: true } });
+    if (error) { toast(error.message, true); return false; }
+    if (S.user) S.user.user_metadata = { ...(S.user.user_metadata || {}), password_set: true };
+    toast('Password saved. You can now sign in with it.');
+  } });
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-setpw]')) passwordModal(); });
+let pendingRecovery = false;
 $$('[data-signout]').forEach(b => b.addEventListener('click', async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); }));
 
 // Expired or already-used sign-in link: say so plainly instead of showing a blank login.
@@ -905,7 +949,14 @@ $$('[data-signout]').forEach(b => b.addEventListener('click', async () => { awai
   setTimeout(() => { show('#login', true); const n = $('#login-error'); n.textContent = msg; n.classList.remove('hidden'); }, 0);
 })();
 let started = false;
-sb.auth.onAuthStateChange((_evt, session) => {
-  if (session && !started) { started = true; startApp(session); }
+sb.auth.onAuthStateChange((evt, session) => {
+  if (evt === 'PASSWORD_RECOVERY') pendingRecovery = true;
+  if (session && !started) { started = true; startApp(session).then(() => {
+    if (pendingRecovery) { pendingRecovery = false; passwordModal('Choose a new password'); }
+    // first sign-in (email link = verification): ask them to create a password right away
+    else if (!session.user?.user_metadata?.password_set) passwordModal('Create your password',
+      '<p style="margin-top:0">✅ Your email is verified. Create a password so next time you can sign in without waiting for an email.</p>');
+  }); }
+  else if (evt === 'PASSWORD_RECOVERY' && started) { pendingRecovery = false; passwordModal('Choose a new password'); }
   if (!session) { started = false; show('#app', false); show('#noaccess', false); show('#login', true); }
 });
