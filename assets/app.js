@@ -366,7 +366,7 @@ const VIEWS = {
   p_costs: { title: 'Costs', icon: '🧮', table: 'cost_assumptions', scope: 'platform', order: ['item', true], soft: true, platform: true,
     cols: [{ f: 'item', label: 'Item', req: true }, { f: 'value', label: 'Value', type: 'money' }, { f: 'unit', label: 'Unit' }, { f: 'notes', label: 'Notes' }] },
 
-  p_settings: { title: 'System Settings', icon: '🔧', table: 'app_settings', scope: 'platform', order: ['key', true], platform: true, noAdd: true,
+  p_settings: { title: 'System Settings', icon: '🔧', table: 'app_settings', scope: 'platform', order: ['key', true], platform: true, noAdd: true, idField: 'key',
     desc: 'Connection between the website and n8n. Paste the Production URL of the "Send Now (from website)" node here.',
     cols: [{ f: 'key', label: 'Setting', edit: false }, { f: 'value', label: 'Value', render: (v, r) => r.key === 'dispatch_secret' ? '<span class="muted">•••••• (click Edit to view)</span>' : esc(v) },
       { f: 'notes', label: 'Notes', edit: false }] },
@@ -481,7 +481,7 @@ function drawTable(key) {
   if (!rows.length) { $('#tbl').innerHTML = `<div class="empty">${T.q ? 'No matches.' : 'Nothing here yet.'}</div>`; return; }
   const canEdit = r => canWrite(v) && !v.noEdit && !r.deleted_at && (!v.canEdit || v.canEdit(r));
   $('#tbl').innerHTML = `<table class="data"><thead><tr>${cols.map(c => `<th data-sort="${esc(c.f)}">${esc(c.label)}${T.sort && T.sort[0] === c.f ? (T.sort[1] ? ' ▲' : ' ▼') : ''}</th>`).join('')}<th></th></tr></thead>
-    <tbody>${rows.map(r => `<tr class="${r.deleted_at ? 'deleted' : ''}" data-id="${esc(r.id ?? r.org_id)}">${cols.map(c => `<td>${cell(c, r)}</td>`).join('')}
+    <tbody>${rows.map(r => `<tr class="${r.deleted_at ? 'deleted' : ''}" data-id="${esc(r[v.idField || 'id'] ?? r.org_id)}">${cols.map(c => `<td>${cell(c, r)}</td>`).join('')}
       <td class="actions">${(v.rowActions && (canWrite(v) || v.readOnly || v.platform) ? v.rowActions(r) : []).map((a, i) => `<button class="btn ${a.danger ? 'danger' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join(' ')}
       ${r.deleted_at ? '<button class="btn secondary sm" data-restore>Restore</button>' : ''}
       ${canEdit(r) ? '<button class="btn ghost sm" data-edit>Edit</button>' : ''}
@@ -489,7 +489,7 @@ function drawTable(key) {
   $('#tbl thead').onclick = e => { const th = e.target.closest('[data-sort]'); if (!th) return; const f = th.dataset.sort;
     T.sort = T.sort && T.sort[0] === f ? [f, !T.sort[1]] : [f, true]; drawTable(key); };
   $('#tbl tbody').onclick = async e => {
-    const tr = e.target.closest('tr'); if (!tr) return; const r = rows.find(x => String(x.id ?? x.org_id) === tr.dataset.id);
+    const tr = e.target.closest('tr'); if (!tr) return; const r = rows.find(x => String(x[v.idField || 'id'] ?? x.org_id) === tr.dataset.id);
     const btn = e.target.closest('button');
     if (!btn) { if (canEdit(r)) editRow(key, r); return; }
     if (btn.dataset.edit !== undefined) return editRow(key, r);
@@ -513,7 +513,7 @@ function editRow(key, row) {
     for (const c of cols) if (c.req && (vals[c.f] == null || vals[c.f] === '')) { toast(`${c.label} is required`, true); return false; }
     if (v.beforeSave && v.beforeSave(vals, isNew) === false) return false;
     if (isNew) { if (v.scope === 'org') vals.org_id = S.org.id; check(await sb.from(v.table).insert(vals), 'Added'); }
-    else check(await sb.from(v.table).update(vals).eq('id', row.id), 'Saved');
+    else check(await sb.from(v.table).update(vals).eq(v.idField || 'id', row[v.idField || 'id']), 'Saved');
     if (key === 'groups') await loadGroups();
     if (v.afterSave) await v.afterSave();
     tablePage(key);
