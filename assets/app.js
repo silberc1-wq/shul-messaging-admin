@@ -571,7 +571,7 @@ async function overviewPage() {
         <pre class="cmd">SEND MEN Mincha today at 6:45 PM
 TEXT ALL Please pay membership dues
 CALL ALL Important announcement
-EMERGENCY ALL Organization closed today
+EMERGENCY ALL Building closed today
 SCHEDULE BOARD 2026-12-01 19:00 Board meeting
 YES   → confirm      NO → cancel
 COMMANDS → list commands</pre>
