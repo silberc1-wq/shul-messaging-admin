@@ -274,7 +274,7 @@ const VIEWS = {
       { f: 'billing_period', label: 'Billing', type: 'select', opts: ['MONTHLY', 'YEARLY'] },
       { f: 'status', label: 'Status', type: 'select', opts: ['ACTIVE', 'AWAITING PAYMENT', 'HOLD', 'SUSPENDED', 'CANCELLED'], render: v => pill(v) },
       { f: 'paid_until', label: 'Paid until', type: 'date' }, { f: 'monthly_fee', label: 'Monthly fee', type: 'money' }, { f: 'setup_fee', label: 'Setup fee', type: 'money', table: false },
-      { f: 'contact_limit', label: 'Contact limit', type: 'number', table: false, hint: 'Leave empty for unlimited contacts.' }, { f: 'notification_limit', label: 'Monthly notifications', type: 'number', table: false },
+      { f: 'contact_limit', label: 'Contact limit', type: 'number', table: false, hint: 'Leave empty for unlimited contacts.' }, { f: 'notification_limit', label: 'Monthly credits', type: 'number', table: false },
       { f: 'voice_minute_limit', label: 'Voice minutes', type: 'number', table: false },
       { f: 'contact_person', label: 'Contact person', table: false }, { f: 'contact_phone', label: 'Contact phone', type: 'phone', table: false },
       { f: 'contact_email', label: 'Contact email', type: 'email' }, { f: 'go_live_date', label: 'Go-live', type: 'date', table: false },
@@ -304,7 +304,7 @@ const VIEWS = {
       { f: 'sort_order', label: '#', type: 'number' }, { f: 'code', label: 'Code', req: true }, { f: 'name', label: 'Name', req: true },
       { f: 'tagline', label: 'Tagline', table: false }, { f: 'monthly_price', label: 'Monthly', type: 'money' }, { f: 'yearly_price', label: 'Yearly', type: 'money' },
       { f: 'setup_fee', label: 'Setup', type: 'money' }, { f: 'contact_limit', label: 'Contacts', type: 'number', render: v => v == null ? 'Unlimited' : esc(num(v)), hint: 'Leave empty for unlimited contacts.' },
-      { f: 'notification_limit', label: 'Msgs / month', type: 'number' }, { f: 'voice_minute_limit', label: 'Voice min', type: 'number' },
+      { f: 'notification_limit', label: 'Credits / month', type: 'number' }, { f: 'voice_minute_limit', label: 'Voice min', type: 'number' },
       { f: 'extra_number_monthly', label: 'Extra # / mo', type: 'money', table: false },
       { f: 'sending_enabled', label: 'Can send', type: 'bool' }, { f: 'is_public', label: 'On website', type: 'bool' },
       { f: 'features', label: 'Bullet points', type: 'list', table: false },
@@ -325,7 +325,7 @@ const VIEWS = {
   p_usage: { title: 'Usage & Tiers', icon: '📈', table: 'org_usage_status', scope: 'platform', order: ['name', true], readOnly: true, platform: true, noDeletedCol: true,
     desc: 'Who is close to or over their plan. "Recommended" is the smallest tier that fits their current usage.',
     cols: [{ f: 'name', label: 'Organization' }, { f: 'plan_name', label: 'Plan' }, { f: 'active_contacts', label: 'Contacts', render: (v, r) => usage(v, r.contact_limit) },
-      { f: 'notifications_this_month', label: 'Msgs this month', render: (v, r) => usage(v, r.notification_limit) },
+      { f: 'notifications_this_month', label: 'Credits this month', render: (v, r) => usage(v, r.notification_limit) },
       { f: 'recommended_plan', label: 'Recommended', render: (v, r) => v && v !== r.plan_name ? `<span class="pill warn">Move to ${esc(v)}</span>` : pill(v ? 'OK' : '') },
       { f: 'paid_until', label: 'Paid until', type: 'date' }] },
 
@@ -781,7 +781,7 @@ async function overviewPage() {
 
     <div class="ov-foot">
       <span><a href="#contacts">${num(contacts.count || 0)} members</a></span>
-      <span>${num(used)} messages this month</span>
+      <span>${num(used)} credits used this month</span>
       ${last ? `<span>Last announcement: <a href="#history">${last.audio_url ? '🎙️ voice message' : '“' + esc((last.message || '').slice(0, 40)) + ((last.message || '').length > 40 ? '…' : '') + '”'}</a> to ${esc(last.group_name)}, ${esc(fmtD(last.created_at))}</span>` : '<span>No announcements yet</span>'}
     </div>
   </div>`;
@@ -829,7 +829,7 @@ async function settingsPage() {
       <div>Organization number</div><div><b>${esc(fmtPhone(o.twilio_number))}</b></div>
       <div>Plan</div><div>${esc(plan?.name || o.plan || '—')} · ${esc((o.billing_period || '').toLowerCase())}</div>
       <div>Status</div><div>${pill(o.status)}${o.paid_until ? ` · paid until ${esc(fmtD(o.paid_until))}` : ''}</div>
-      <div>Limits</div><div>${o.contact_limit ? num(o.contact_limit) + ' contacts' : 'Unlimited contacts'} · ${num(o.notification_limit)} messages/month · ${num(o.voice_minute_limit)} voice minutes</div>
+      <div>Limits</div><div>${o.contact_limit ? num(o.contact_limit) + ' contacts' : 'Unlimited contacts'} · ${num(o.notification_limit)} credits/month · ${num(o.voice_minute_limit)} voice minutes</div>
     </div><p class="small muted" style="margin:10px 0 0">To change your plan or add a phone number, email <a href="mailto:${esc(cfg.supportEmail)}">${esc(cfg.supportEmail)}</a>.</p></div>` });
 }
 
@@ -869,6 +869,8 @@ function segInfo(text) {
 }
 const fixSmart = t => [...t].map(c => SMART[c] ?? c).join('');
 
+const NAME_RE = /\{\s*(name|first\s*name|firstname|first)\s*\}/gi, FULL_RE = /\{\s*(full\s*name|fullname)\s*\}/gi;
+const personalize = (t, name) => t.replace(FULL_RE, name || 'Friend').replace(NAME_RE, (name || '').split(' ')[0] || 'Friend');
 async function sendPage() {
   const o = S.org;
   const { data: myGroups } = await sb.rpc('my_send_groups', { p_org: o.id });
@@ -903,6 +905,7 @@ async function sendPage() {
         <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
       </div>
       <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
+        <div class="hint" id="namehint">Tip: type <b>{name}</b> to greet each person by their first name, e.g. "Dear {name}, …"</div>
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div></div>
       <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -914,12 +917,13 @@ async function sendPage() {
       <div class="kv" id="calc"></div>
       <div style="margin:14px 0 6px;font-weight:600;font-size:13px;color:var(--ink-2)">Who will receive it</div>
       <div class="kv" id="reach"><div>Recipients</div><div class="muted">…</div></div>
-      <p class="small muted" id="segnote" style="margin:14px 0 0">Carriers bill texts per <b>segment</b>. A segment is 160 plain characters, or 70 if the message has an emoji or special character. Long messages are split into 153 / 67-character parts.</p>
+      <p class="small muted" id="segnote" style="margin:14px 0 0"><b>Credits:</b> each text uses 1 credit per segment: 160 plain characters, or 70 if it has Hebrew, Yiddish, emoji or special characters. Longer messages use more. Each phone call uses 1 credit.</p>
     </div>
   </div>`;
   const f = $('#sendf'); let reach = null;
   const draw = () => {
-    const raw = f.msg.value; const mode = f.mode.value;
+    const raw0 = f.msg.value; const mode = f.mode.value; const hasName = NAME_RE.test(raw0) || FULL_RE.test(raw0); NAME_RE.lastIndex = 0; FULL_RE.lastIndex = 0;
+    const raw = personalize(raw0, 'Sarah Cohen');
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const t = raw.trim() ? (raw.trim().toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) && pre ? '' : pre) + raw.trim() + (/stop/i.test(raw) ? '' : foot) : '';
     const i = segInfo(t);
@@ -929,13 +933,13 @@ async function sendPage() {
       <div>Characters</div><div>${num(i.chars)}${i.encoding !== 'GSM-7' ? ` <span class="muted small">(${num([...t].length)} typed)</span>` : ''}</div>
       <div>Segments per text</div><div><b style="font-size:20px">${i.segments}</b> <span class="muted small">· up to ${i.perSeg} chars each</span></div>
       <div>Remaining</div><div>${num(i.remaining)} characters before the next segment</div>
-      <div>Members will see</div><div class="small" style="white-space:pre-wrap;background:#f4f2ec;padding:6px 9px;border-radius:8px">${esc(t) || '<span class="muted">…</span>'}</div>
+      <div>Members will see</div><div><div class="small" style="white-space:pre-wrap;background:#f4f2ec;padding:6px 9px;border-radius:8px">${esc(t) || '<span class="muted">…</span>'}</div>${hasName ? '<div class="small muted" style="margin-top:4px">Example for a member named Sarah. Each person sees their own first name (or "Friend" if no name is saved).</div>' : ''}</div>
       <div>Non-GSM characters</div><div>${i.bad.length ? i.bad.map(c => `<code style="background:#fff3d6;padding:0 5px;border-radius:4px">${esc(c === ' ' ? '␠' : c)}</code>`).join(' ') : '<span class="muted">None detected</span>'}</div>`;
     $('#reach').innerHTML = reach ? `
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
       <div>Phone calls</div><div><b>${num(calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
-      <div>Total segments</div><div><b>${num(sms * i.segments)}</b> <span class="muted small">(${num(sms)} × ${i.segments})</span></div>
+      <div>Credits this uses</div><div><b>${num(sms * i.segments + calls)}</b> <span class="muted small">(${num(sms)} texts × ${i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span></div>
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
     const bc = $('#badchars');
     if (i.bad.length && i.bad.some(c => SMART[c] !== undefined)) {
@@ -951,7 +955,7 @@ async function sendPage() {
     f.msg.rows = voice ? 2 : 6; f.msg.placeholder = voice ? 'e.g. Shabbos schedule announcement' : 'Mincha today is at 6:45 PM.';
     $('#calc').classList.toggle('hidden', voice); $('#badchars').style.display = voice ? 'none' : $('#badchars').style.display;
     $('#calch').textContent = voice ? 'Voice recording' : 'Message calculator';
-    $('#segnote').classList.toggle('hidden', voice);
+    $('#segnote').classList.toggle('hidden', voice); $('#namehint').classList.toggle('hidden', voice);
     $('#vdndrow').classList.toggle('hidden', !(voice && reach && (reach.skipped_dnd > 0 || f.vdnd.checked)));
     if (voice && reach) $('#reach').innerHTML = `<div>Phone calls</div><div><b>${num(reach.calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} (quiet hours)</div>` : ''}
@@ -1042,10 +1046,10 @@ async function sendPage() {
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const full = (pre && t.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
-    const i = segInfo(full), mode = f.mode.value;
+    const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value;
     const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
-      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * i.segments)} segments<br><br>
-       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(full)}</span>`, 'Send now', false);
+      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * i.segments + reach.calls)} credits<br><br>
+       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: t,
