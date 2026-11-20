@@ -911,12 +911,15 @@ async function sendPage() {
       <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
       <div class="field" id="flyerbox"><label>Flyer (optional)</label>
         <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-          <label class="btn secondary sm" style="cursor:pointer">📎 Add a flyer<input type="file" id="flyer" accept="image/jpeg,image/png,image/gif,.jpg,.jpeg,.png,.gif,.pdf,.doc,.docx" hidden></label>
-          <div id="flyerinfo" class="small muted" style="flex:1;min-width:200px">A picture (JPG, PNG), a PDF, or a Word file. Pictures and the first page of a PDF arrive as a picture text.</div>
+          <label class="btn secondary sm" style="cursor:pointer">📎 Add a flyer<input type="file" id="flyer" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.heic,.heif,.pdf,.doc,.docx" hidden></label>
+          <div id="flyerinfo" class="small muted" style="flex:1;min-width:200px">Any picture (including iPhone photos), a PDF, or a Word file. It's turned into a JPG picture so it shows right inside the text.</div>
         </div>
         <div id="flyerprev" class="hidden" style="margin-top:10px;display:flex;gap:12px;align-items:flex-start">
           <img id="flyerimg" alt="Flyer preview" style="max-width:140px;max-height:180px;border-radius:8px;border:1px solid var(--line)">
-          <button type="button" class="btn ghost sm" id="flyerrm">Remove</button></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label id="flyeropt" class="hidden" style="display:flex;gap:6px;align-items:center;font-size:13px;font-weight:500"><input type="checkbox" id="flyerconv" checked> Send as a picture (recommended)</label>
+            <a class="btn secondary sm" id="flyerdl" download="flyer.jpg">⬇ Download JPG</a>
+            <button type="button" class="btn ghost sm" id="flyerrm">Remove</button></div></div></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="muted small">${o.confirmation_required ? 'You\'ll confirm before it goes out.' : ''}</span>
         <button class="btn gold" type="submit" id="sendbtn">Review & send</button></div>
@@ -939,6 +942,24 @@ async function sendPage() {
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
       c.toBlob(b => b ? res(b) : rej(new Error('convert')), 'image/jpeg', q);
     }; img.onerror = rej; img.src = src; });
+  async function heicToJpeg(file) {
+    const heic2any = (await import('https://esm.sh/heic2any@0.0.4')).default;
+    const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: .9 });
+    return toJpeg(URL.createObjectURL(Array.isArray(out) ? out[0] : out));
+  }
+  async function docxToJpeg(file) {
+    const mammoth = (await import('https://esm.sh/mammoth@1.8.0')).default;
+    const html2canvas = (await import('https://esm.sh/html2canvas@1.4.1')).default;
+    const { value } = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
+    const box = document.createElement('div');
+    box.style.cssText = 'position:absolute;left:-10000px;top:0;width:816px;padding:48px;background:#fff;color:#111;font:16px/1.5 Georgia,serif';
+    box.innerHTML = value; box.querySelectorAll('img').forEach(i => { i.style.maxWidth = '100%'; });
+    document.body.appendChild(box);
+    try {
+      const canvas = await html2canvas(box, { backgroundColor: '#ffffff', scale: 1.5, height: Math.min(box.scrollHeight, 1056 * 1.2), windowWidth: 912 });
+      return await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('render')), 'image/jpeg', .85));
+    } finally { box.remove(); }
+  }
   async function pdfFirstPage(file) {
     const pdfjs = await import('https://esm.sh/pdfjs-dist@4.10.38/build/pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
@@ -950,37 +971,47 @@ async function sendPage() {
     await page.render({ canvasContext: g, viewport: vp }).promise;
     return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('render')), 'image/jpeg', .85));
   }
+  const asPicture = () => !!(flyer && flyer.image && $('#flyerconv').checked);
   const showFlyer = () => {
-    const info = $('#flyerinfo'), prev = $('#flyerprev');
-    if (!flyer) { prev.classList.add('hidden'); info.textContent = 'A picture (JPG, PNG), a PDF, or a Word file. Pictures and the first page of a PDF arrive as a picture text.'; draw(); return; }
-    if (flyer.image) { $('#flyerimg').src = URL.createObjectURL(flyer.image); prev.classList.remove('hidden'); } else prev.classList.add('hidden');
-    info.innerHTML = flyer.kind === 'pdf' ? `✅ <b>${esc(flyer.name)}</b>: the first page is sent as a picture, plus a link to the full PDF.`
-      : flyer.kind === 'pdf-link' ? `✅ <b>${esc(flyer.name)}</b>: will be sent as a link (we couldn't turn it into a picture).`
-      : flyer.kind === 'doc' ? `✅ <b>${esc(flyer.name)}</b>: will be sent as a link. Tip: save it as a PDF or picture so it shows inside the text.`
-      : `✅ <b>${esc(flyer.name)}</b>: sent as a picture text.`;
-    if (!flyer.image) prev.classList.add('hidden'), prev.style.display = ''; draw();
+    const info = $('#flyerinfo'), prev = $('#flyerprev'), opt = $('#flyeropt'), dl = $('#flyerdl');
+    if (!flyer) { prev.classList.add('hidden'); info.textContent = "Any picture (including iPhone photos), a PDF, or a Word file. It's turned into a JPG picture so it shows right inside the text."; draw(); return; }
+    if (flyer.image) {
+      const u = URL.createObjectURL(flyer.image); $('#flyerimg').src = u; dl.href = u;
+      dl.download = flyer.name.replace(/\.[^.]+$/, '') + '.jpg'; prev.classList.remove('hidden');
+      opt.classList.toggle('hidden', !flyer.file); // picture-only files have nothing to choose
+    } else prev.classList.add('hidden');
+    const pic = asPicture();
+    info.innerHTML = !flyer.image
+      ? `📎 <b>${esc(flyer.name)}</b> will be sent as a <b>link</b>. ` + (flyer.old ? 'Old Word files (.doc) can\'t be converted. Save it as .docx or PDF to send it as a picture.' : flyer.failed ? 'It couldn\'t be turned into a picture.' : '')
+      : flyer.kind === 'image' ? `✅ <b>${esc(flyer.name)}</b> → JPG picture text.`
+      : pic ? `✅ <b>${esc(flyer.name)}</b> → ${flyer.kind === 'pdf' ? 'first page' : 'first page'} as a JPG picture, plus a link to the full file.`
+      : `📎 <b>${esc(flyer.name)}</b> will be sent as a <b>link</b> only.`;
+    draw();
   };
   $('#flyer').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = ''; if (!file) return;
-    const n = file.name.toLowerCase(); $('#flyerinfo').textContent = 'Preparing the flyer…';
+    const n = file.name.toLowerCase(); $('#flyerinfo').textContent = 'Converting the flyer to a picture…';
+    const tryConvert = async (fn, kindOk) => { try { return { image: await fn(), file, name: file.name, kind: kindOk }; } catch (err) { console.error(err); return { image: null, file, name: file.name, kind: 'link', failed: true }; } };
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error('That file is over 10 MB.');
-      if (/\.(jpe?g|png)$/.test(n)) flyer = { image: await toJpeg(URL.createObjectURL(file)), file: null, name: file.name, kind: 'image' };
+      if (/\.(heic|heif)$/.test(n) || /heic|heif/.test(file.type)) flyer = await tryConvert(() => heicToJpeg(file), 'image');
       else if (/\.gif$/.test(n)) flyer = { image: file.size < 900000 ? file : await toJpeg(URL.createObjectURL(file)), file: null, name: file.name, kind: 'image' };
-      else if (/\.pdf$/.test(n)) {
-        try { flyer = { image: await pdfFirstPage(file), file, name: file.name, kind: 'pdf' }; }
-        catch (err) { console.error(err); flyer = { image: null, file, name: file.name, kind: 'pdf-link' }; }
-      } else if (/\.docx?$/.test(n)) flyer = { image: null, file, name: file.name, kind: 'doc' };
-      else throw new Error('Please choose a JPG, PNG, GIF, PDF or Word file.');
+      else if (/\.(jpe?g|png|webp|bmp)$/.test(n) || /^image\//.test(file.type)) flyer = await tryConvert(() => toJpeg(URL.createObjectURL(file)), 'image');
+      else if (/\.pdf$/.test(n)) flyer = await tryConvert(() => pdfFirstPage(file), 'pdf');
+      else if (/\.docx$/.test(n)) flyer = await tryConvert(() => docxToJpeg(file), 'docx');
+      else if (/\.doc$/.test(n)) flyer = { image: null, file, name: file.name, kind: 'link', old: true };
+      else throw new Error('Please choose a picture, PDF or Word file.');
+      if (flyer.kind === 'image' && flyer.image) flyer.file = null; // a picture needs no extra link
     } catch (err) { flyer = null; toast(err.message || 'Could not use that file.', true); }
     showFlyer();
   });
+  $('#flyerconv').addEventListener('change', () => showFlyer());
   $('#flyerrm').addEventListener('click', () => { flyer = null; showFlyer(); });
   async function uploadFlyer() {
     if (!flyer) return { media: null, link: null };
     const stamp = Date.now(), base = flyer.name.replace(/\.[^.]+$/, '').replace(/[^\w\-]+/g, '_').slice(0, 50) || 'flyer';
     let media = null, link = null;
-    if (flyer.image) {
+    if (flyer.image && asPicture()) {
       const type = flyer.image.type === 'image/gif' ? 'image/gif' : 'image/jpeg', path = `${o.id}/${stamp}-${base}.${type === 'image/gif' ? 'gif' : 'jpg'}`;
       const up = await sb.storage.from('flyers').upload(path, flyer.image, { contentType: type, upsert: false });
       if (up.error) throw new Error('Flyer upload failed: ' + up.error.message);
@@ -988,7 +1019,7 @@ async function sendPage() {
     }
     if (flyer.file) {
       const ext = flyer.file.name.split('.').pop().toLowerCase(), path = `${o.id}/${stamp}-${base}.${ext}`;
-      const type = ext === 'pdf' ? 'application/pdf' : ext === 'doc' ? 'application/msword' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const type = ({ pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', bmp: 'image/bmp', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif' })[ext] || flyer.file.type || 'application/octet-stream';
       const up = await sb.storage.from('flyers').upload(path, flyer.file, { contentType: type, upsert: false });
       if (up.error) throw new Error('Flyer upload failed: ' + up.error.message);
       link = sb.storage.from('flyers').getPublicUrl(path).data.publicUrl;
@@ -1016,7 +1047,7 @@ async function sendPage() {
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
       <div>Phone calls</div><div><b>${num(calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
-      <div>Credits this uses</div><div><b>${num(sms * (flyer?.image ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${flyer?.image ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? '<div class="small muted">Call members hear the message only, not the flyer.</div>' : ''}</div>
+      <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? '<div class="small muted">Call members hear the message only, not the flyer.</div>' : ''}</div>
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
     const bc = $('#badchars');
     if (i.bad.length && i.bad.some(c => SMART[c] !== undefined)) {
@@ -1126,13 +1157,13 @@ async function sendPage() {
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
     const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value;
     const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
-      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * (flyer?.image ? 3 : i.segments) + reach.calls)} credits<br><br>${flyer?.image ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !flyer.image ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
+      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + reach.calls)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
        <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
     let up;
     try { up = await uploadFlyer(); } catch (err) { $('#sendbtn').disabled = false; return toast(err.message, true); }
-    const msgOut = up.link ? `${t}\n${flyer.kind === 'doc' ? 'Flyer' : 'Full flyer'}: ${up.link}` : t;
+    const msgOut = up.link ? `${t}\n${up.media ? 'Full flyer' : 'Flyer'}: ${up.link}` : t;
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
       p_mode: mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
     $('#sendbtn').disabled = false;
