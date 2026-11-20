@@ -851,10 +851,13 @@ async function sendPage() {
       </div>
       <div id="voicebox" class="hidden">
         <div class="field"><label>Recording</label>
-          <div class="groups-pick" style="margin-bottom:10px"><label><input type="radio" name="vsrc" value="file" checked> Upload a file</label><label><input type="radio" name="vsrc" value="url"> Link to a recording</label></div>
-          <input type="file" name="vfile" id="vfile" accept=".mp3,.wav,audio/mpeg,audio/wav">
+          <div class="groups-pick" style="margin-bottom:10px"><label><input type="radio" name="vsrc" value="rec" checked> 🎙️ Record now</label><label><input type="radio" name="vsrc" value="file"> Upload a file</label><label><input type="radio" name="vsrc" value="url"> Link to a recording</label></div>
+          <div id="vrec" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+            <button type="button" class="btn secondary" id="vrecbtn">● Start recording</button>
+            <span id="vrectime" class="muted small">Uses your computer's microphone. Up to 3 minutes.</span></div>
+          <input type="file" name="vfile" id="vfile" class="hidden" accept=".mp3,.wav,audio/mpeg,audio/wav">
           <input type="url" name="vurl" id="vurl" class="hidden" placeholder="https://…/announcement.mp3">
-          <div class="hint">MP3 or WAV, up to 15 MB. Phone recordings in other formats (like .m4a) need to be saved as MP3 first.</div></div>
+          <div class="hint hidden" id="vfilehint">MP3 or WAV, up to 15 MB. Phone recordings in other formats (like .m4a) need to be saved as MP3 first.</div></div>
         <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
         <label id="vdndrow" class="hidden" style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)">
           <input type="checkbox" name="vdnd" style="margin-top:3px"> It's quiet hours now, so calls are held back. Check this to call everyone anyway.</label>
@@ -919,10 +922,60 @@ async function sendPage() {
   const vplayer = $('#vplayer'); let vObjUrl = null;
   const vsrc = () => f.querySelector('input[name=vsrc]:checked').value;
   const showPlayer = src => { if (src) { vplayer.src = src; vplayer.classList.remove('hidden'); } else { vplayer.removeAttribute('src'); vplayer.classList.add('hidden'); } };
+  const vPreview = () => vsrc() === 'file' ? vObjUrl : vsrc() === 'rec' ? vRecUrl : (/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null);
   f.querySelectorAll('input[name=vsrc]').forEach(r => r.addEventListener('change', () => {
-    $('#vfile').classList.toggle('hidden', vsrc() !== 'file'); $('#vurl').classList.toggle('hidden', vsrc() !== 'url');
-    showPlayer(vsrc() === 'file' ? vObjUrl : (/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
+    if (vsrc() !== 'rec') stopRec();
+    $('#vfile').classList.toggle('hidden', vsrc() !== 'file'); $('#vfilehint').classList.toggle('hidden', vsrc() !== 'file');
+    $('#vurl').classList.toggle('hidden', vsrc() !== 'url'); $('#vrec').classList.toggle('hidden', vsrc() !== 'rec');
+    showPlayer(vPreview());
   }));
+  // record from the computer's microphone, then turn it into a WAV file that phone calls can play
+  let mediaRec = null, recChunks = [], recTimer = null, recStart = 0, recStream = null, vRecFile = null, vRecUrl = null;
+  const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  const recBtn = $('#vrecbtn'), recTime = $('#vrectime');
+  async function startRec() {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast('This browser can\'t record. Please use Chrome or Edge.', true);
+    try { recStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch { return toast('The microphone is blocked. Click the icon at the left of the address bar, allow the microphone, and try again.', true); }
+    recChunks = []; mediaRec = new MediaRecorder(recStream);
+    mediaRec.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+    mediaRec.onstop = finishRec;
+    mediaRec.start(); recStart = Date.now();
+    recBtn.textContent = '■ Stop recording'; recBtn.classList.add('danger');
+    recTimer = setInterval(() => { const t = (Date.now() - recStart) / 1000; recTime.innerHTML = `<b style="color:var(--bad)">● Recording</b> ${mmss(t)} <span class="muted">(max 3:00)</span>`; if (t >= 180) stopRec(); }, 250);
+  }
+  function stopRec() {
+    clearInterval(recTimer); recTimer = null;
+    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+    recStream?.getTracks().forEach(t => t.stop()); recStream = null;
+    recBtn.classList.remove('danger');
+  }
+  async function toWav(buf) {
+    const rate = 16000, len = Math.max(1, Math.ceil(buf.duration * rate));
+    const off = new OfflineAudioContext(1, len, rate); const src = off.createBufferSource();
+    src.buffer = buf; src.connect(off.destination); src.start();
+    const d = (await off.startRendering()).getChannelData(0);
+    const v = new DataView(new ArrayBuffer(44 + d.length * 2)); const str = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    str(0, 'RIFF'); v.setUint32(4, 36 + d.length * 2, true); str(8, 'WAVE'); str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, d.length * 2, true);
+    for (let i = 0; i < d.length; i++) { const x = Math.max(-1, Math.min(1, d[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+    return new Blob([v], { type: 'audio/wav' });
+  }
+  async function finishRec() {
+    recTime.textContent = 'Preparing your recording…';
+    try {
+      const blob = new Blob(recChunks, { type: mediaRec.mimeType || 'audio/webm' });
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = await ctx.decodeAudioData(await blob.arrayBuffer()); ctx.close();
+      if (buf.duration < 1) { recTime.textContent = 'That was too short. Try again.'; recBtn.textContent = '● Start recording'; return; }
+      vRecFile = new File([await toWav(buf)], `recording-${Date.now()}.wav`, { type: 'audio/wav' });
+      if (vRecUrl) URL.revokeObjectURL(vRecUrl); vRecUrl = URL.createObjectURL(vRecFile);
+      showPlayer(vRecUrl);
+      recTime.innerHTML = `✅ Recorded ${mmss(buf.duration)}. <b>Press ▶ below to listen.</b> Not happy? Record again.`;
+      recBtn.textContent = '● Record again';
+    } catch (e) { console.error(e); recTime.textContent = 'Could not use that recording. Please try again.'; recBtn.textContent = '● Start recording'; }
+  }
+  recBtn.addEventListener('click', () => { if (recTimer) stopRec(); else startRec(); });
   f.vfile.addEventListener('change', () => {
     const file = f.vfile.files[0]; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null;
     if (file) {
@@ -963,12 +1016,14 @@ async function sendPage() {
     f.msg.value = ''; draw();
   });
   async function sendVoice() {
-    const file = vsrc() === 'file' ? f.vfile.files[0] : null, link = vsrc() === 'url' ? f.vurl.value.trim() : '';
-    if (!file && !link) return toast(vsrc() === 'file' ? 'Choose a recording to upload.' : 'Paste the link to the recording.', true);
+    if (recTimer) return toast('Stop the recording first.', true);
+    const file = vsrc() === 'file' ? f.vfile.files[0] : vsrc() === 'rec' ? vRecFile : null, link = vsrc() === 'url' ? f.vurl.value.trim() : '';
+    if (!file && !link) return toast(vsrc() === 'rec' ? 'Record your message first.' : vsrc() === 'file' ? 'Choose a recording to upload.' : 'Paste the link to the recording.', true);
     if (link && !/^https:\/\/\S+$/.test(link)) return toast('The link must start with https://', true);
     if (!reach || !reach.calls) return toast(reach?.skipped_dnd ? 'It\'s quiet hours: check "call everyone anyway" to send now.' : 'Nobody in this group would receive a call', true);
     const ok = await confirmBox('Send this voice recording?',
-      `<b>${esc(f.group.value)}</b> · ${num(reach.calls)} phone calls<br><br>Each person hears "This is a message from ${esc(o.name)}", then the recording twice.`, 'Call everyone now', false);
+      `<b>${esc(f.group.value)}</b> · ${num(reach.calls)} phone calls<br><br>Each person hears "This is a message from ${esc(o.name)}", then the recording twice.
+       <br><br><b>Listen before sending:</b><audio controls src="${esc(vPreview() || '')}" style="width:100%;margin-top:8px"></audio>`, 'Call everyone now', false);
     if (!ok) return;
     const btn = $('#sendbtn'); btn.disabled = true; btn.textContent = file ? 'Uploading…' : 'Sending…';
     try {
@@ -983,7 +1038,9 @@ async function sendPage() {
       const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: f.msg.value.trim(), p_mode: 'CALL', p_emergency: f.vdnd.checked, p_audio_url: url });
       if (res.error) return toast(res.error.message, true);
       toast('Calling now. It will appear in History in a moment.');
-      f.msg.value = ''; f.vfile.value = ''; f.vurl.value = ''; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null; showPlayer(null); draw();
+      f.msg.value = ''; f.vfile.value = ''; f.vurl.value = ''; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null;
+      if (vRecUrl) URL.revokeObjectURL(vRecUrl); vRecUrl = null; vRecFile = null; recBtn.textContent = '● Start recording';
+      recTime.textContent = 'Uses your computer\'s microphone. Up to 3 minutes.'; showPlayer(null); draw();
     } finally { btn.disabled = false; btn.textContent = 'Review & send'; }
   }
 }
