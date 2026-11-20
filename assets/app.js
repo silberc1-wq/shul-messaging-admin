@@ -856,6 +856,8 @@ async function sendPage() {
           <input type="url" name="vurl" id="vurl" class="hidden" placeholder="https://…/announcement.mp3">
           <div class="hint">MP3 or WAV, up to 15 MB. Phone recordings in other formats (like .m4a) need to be saved as MP3 first.</div></div>
         <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
+        <label id="vdndrow" class="hidden" style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)">
+          <input type="checkbox" name="vdnd" style="margin-top:3px"> It's quiet hours now, so calls are held back. Check this to call everyone anyway.</label>
         <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
       </div>
       <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
@@ -908,6 +910,7 @@ async function sendPage() {
     $('#calc').classList.toggle('hidden', voice); $('#badchars').style.display = voice ? 'none' : $('#badchars').style.display;
     $('#calch').textContent = voice ? 'Voice recording' : 'Message calculator';
     $('#segnote').classList.toggle('hidden', voice);
+    $('#vdndrow').classList.toggle('hidden', !(voice && reach && (reach.skipped_dnd > 0 || f.vdnd.checked)));
     if (voice && reach) $('#reach').innerHTML = `<div>Phone calls</div><div><b>${num(reach.calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} (quiet hours)</div>` : ''}
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}`;
@@ -929,10 +932,11 @@ async function sendPage() {
     }
     showPlayer(vObjUrl);
   });
+  f.vdnd.addEventListener('change', () => loadReach());
   f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
   f.msg.addEventListener('input', draw);
@@ -962,7 +966,7 @@ async function sendPage() {
     const file = vsrc() === 'file' ? f.vfile.files[0] : null, link = vsrc() === 'url' ? f.vurl.value.trim() : '';
     if (!file && !link) return toast(vsrc() === 'file' ? 'Choose a recording to upload.' : 'Paste the link to the recording.', true);
     if (link && !/^https:\/\/\S+$/.test(link)) return toast('The link must start with https://', true);
-    if (!reach || !reach.calls) return toast('Nobody in this group would receive a call', true);
+    if (!reach || !reach.calls) return toast(reach?.skipped_dnd ? 'It\'s quiet hours: check "call everyone anyway" to send now.' : 'Nobody in this group would receive a call', true);
     const ok = await confirmBox('Send this voice recording?',
       `<b>${esc(f.group.value)}</b> · ${num(reach.calls)} phone calls<br><br>Each person hears "This is a message from ${esc(o.name)}", then the recording twice.`, 'Call everyone now', false);
     if (!ok) return;
@@ -976,7 +980,7 @@ async function sendPage() {
         if (up.error) return toast('Upload failed: ' + up.error.message, true);
         url = sb.storage.from('recordings').getPublicUrl(path).data.publicUrl;
       }
-      const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: f.msg.value.trim(), p_mode: 'CALL', p_emergency: false, p_audio_url: url });
+      const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: f.msg.value.trim(), p_mode: 'CALL', p_emergency: f.vdnd.checked, p_audio_url: url });
       if (res.error) return toast(res.error.message, true);
       toast('Calling now. It will appear in History in a moment.');
       f.msg.value = ''; f.vfile.value = ''; f.vurl.value = ''; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null; showPlayer(null); draw();
