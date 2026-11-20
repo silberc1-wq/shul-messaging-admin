@@ -274,3 +274,20 @@ pre.cmd { background: #f4f2ec; border-radius: 10px; padding: 12px 14px; font-siz
 .ov-foot { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: 13.5px; padding-top: 18px; border-top: 1px solid var(--line); }
 .ov-foot a { color: var(--ink-2); }
 @media (max-width: 860px) { .ov-actions, .ov-how { grid-template-columns: 1fr; } .ov-hello h1 { font-size: 32px; } }
+/* ---------- Theme B: warm cream (light) ---------- */
+:root { --paper: #ffffff; --line: #ece6d9; --cream: #f7f3ea; --cream-2: #efe8d9; --shadow: 0 1px 2px rgba(20, 33, 61, .04), 0 4px 14px rgba(20, 33, 61, .04); }
+.side { background: var(--cream); color: #5f5848; border-right: 1px solid var(--line); }
+.side .logo { color: var(--ink); }
+.side-toggle { border-color: #e3dccb; color: #6b6352; }
+.side-toggle:hover { background: var(--cream-2); color: var(--ink); }
+.side-foot { color: #8a8270; }
+.side-foot b { color: var(--ink); }
+.side-signout { color: #6b6352; }
+.side .org-pick select { background: #fff; color: var(--ink); border-color: #e3dccb; }
+.nav-h { color: #a39a85; }
+.nav a { color: #4f4838; }
+.nav a:hover { background: var(--cream-2); color: var(--ink); }
+.nav a.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(20, 33, 61, .08); }
+@media (min-width: 861px) { .app.collapsed .side:hover { box-shadow: 10px 0 30px rgba(20, 33, 61, .12); } }
+.ov-members, pre.cmd { background: var(--cream); }
+.login { background: var(--cream); }
