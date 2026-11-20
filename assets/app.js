@@ -925,15 +925,18 @@ async function sendPage() {
     const raw0 = f.msg.value; const mode = f.mode.value; const hasName = NAME_RE.test(raw0) || FULL_RE.test(raw0); NAME_RE.lastIndex = 0; FULL_RE.lastIndex = 0;
     const raw = personalize(raw0, 'Sarah Cohen');
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
-    const t = raw.trim() ? (raw.trim().toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) && pre ? '' : pre) + raw.trim() + (/stop/i.test(raw) ? '' : foot) : '';
-    const i = segInfo(t);
+    const msg = raw.trim();
+    const usePre = !(pre && msg && msg.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase())), useFoot = !/stop/i.test(msg);
+    const t = (usePre ? pre : '') + msg + (useFoot ? foot : '');          // what is actually sent (heading + message + STOP line)
+    const fixed = segInfo((usePre ? pre : '') + (useFoot ? foot : '')).chars; // the part added automatically
+    const i = segInfo(t); const mine = Math.max(0, i.chars - fixed);
     const sms = reach ? reach.sms : 0, calls = reach ? reach.calls : 0;
     $('#calc').innerHTML = `
       <div>Encoding</div><div>${i.encoding === 'GSM-7' ? '<span class="pill ok">GSM-7 (standard)</span>' : '<span class="pill warn">Unicode</span>'}</div>
-      <div>Characters</div><div>${num(i.chars)}${i.encoding !== 'GSM-7' ? ` <span class="muted small">(${num([...t].length)} typed)</span>` : ''}</div>
+      <div>Characters</div><div>${num(i.chars)} <span class="muted small">= ${num(fixed)} heading and STOP line + ${num(mine)} your message</span></div>
       <div>Segments per text</div><div><b style="font-size:20px">${i.segments}</b> <span class="muted small">· up to ${i.perSeg} chars each</span></div>
-      <div>Remaining</div><div>${num(i.remaining)} characters before the next segment</div>
-      <div>Members will see</div><div><div class="small" style="white-space:pre-wrap;background:#f4f2ec;padding:6px 9px;border-radius:8px">${esc(t) || '<span class="muted">…</span>'}</div>${hasName ? '<div class="small muted" style="margin-top:4px">Example for a member named Sarah. Each person sees their own first name (or "Friend" if no name is saved).</div>' : ''}</div>
+      <div>Remaining</div><div>${msg ? `${num(i.remaining)} characters before the next segment` : `<b>${num(i.remaining)}</b> characters left for your message in 1 text`}</div>
+      <div>Members will see</div><div><div class="small" style="white-space:pre-wrap;background:#f4f2ec;padding:6px 9px;border-radius:8px">${msg ? esc(t) : `${esc(pre)}<span class="muted"><i>your message</i></span>${esc(foot)}`}</div>${hasName ? '<div class="small muted" style="margin-top:4px">Example for a member named Sarah. Each person sees their own first name (or "Friend" if no name is saved).</div>' : ''}</div>
       <div>Non-GSM characters</div><div>${i.bad.length ? i.bad.map(c => `<code style="background:#fff3d6;padding:0 5px;border-radius:4px">${esc(c === ' ' ? '␠' : c)}</code>`).join(' ') : '<span class="muted">None detected</span>'}</div>`;
     $('#reach').innerHTML = reach ? `
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
