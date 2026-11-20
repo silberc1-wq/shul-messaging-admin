@@ -1047,7 +1047,7 @@ async function sendPage() {
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
       <div>Phone calls</div><div><b>${num(calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
-      <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? '<div class="small muted">Call members hear the message only, not the flyer.</div>' : ''}</div>
+      <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? `<div class="small muted">${msg ? 'Call members hear your typed message only, never the flyer.' : 'No message typed: only texting members get the flyer, so call members won\'t be called.'}</div>` : ''}</div>
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
     const bc = $('#badchars');
     if (i.bad.length && i.bad.some(c => SMART[c] !== undefined)) {
@@ -1151,13 +1151,15 @@ async function sendPage() {
     e.preventDefault();
     if (f.mode.value === 'VOICE') return sendVoice();
     let t = f.msg.value.trim(); if (!t && !flyer) return toast('Write a message first', true);
-    if (!t && flyer) t = 'Please see the attached flyer.';
+    const flyerOnly = !t && !!flyer;           // nothing to say on a call: texting members only
+    if (flyerOnly) t = 'Please see the attached flyer.';
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const full = (pre && t.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
-    const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value;
+    if (flyerOnly && !reach.sms) return toast('Everyone in this group gets calls, and a flyer can\'t be heard. Type a message to call them.', true);
+    const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = flyerOnly ? 0 : reach.calls;
     const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
-      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${reach.calls ? ` + ${num(reach.calls)} calls` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + reach.calls)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
+      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + callsOut)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
        <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
@@ -1165,7 +1167,7 @@ async function sendPage() {
     try { up = await uploadFlyer(); } catch (err) { $('#sendbtn').disabled = false; return toast(err.message, true); }
     const msgOut = up.link ? `${t}\n${up.media ? 'Full flyer' : 'Flyer'}: ${up.link}` : t;
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
+      p_mode: flyerOnly ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
     $('#sendbtn').disabled = false;
     if (res.error) return toast(res.error.message, true);
     toast('Sending now. It will appear in History in a moment.');
