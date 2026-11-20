@@ -208,10 +208,11 @@ const VIEWS = {
     ] },
 
   replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
-    desc: 'Messages members texted back. They are also forwarded to the office phone in Settings.',
+    desc: 'Texts members sent back, and voicemails left on the phone line. They are also forwarded to the phones and email in Settings.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name', label: 'Name', edit: false }, { f: 'phone', label: 'Phone', type: 'phone', edit: false },
-      { f: 'message', label: 'Message', type: 'longtext', edit: false }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
+      { f: 'message', label: 'Message', type: 'longtext', edit: false },
+      { f: 'audio_url', label: 'Voicemail', edit: false, render: v => /^https:\/\//.test(v || '') ? `<a href="${esc(v)}" target="_blank" rel="noopener">▶ Play</a>` : '' }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
       { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ],
     rowActions: r => r.status !== 'HANDLED' ? [{ label: 'Mark handled', run: async () => check(await sb.from('replies').update({ status: 'HANDLED' }).eq('id', r.id), 'Marked handled') }] : [] },
@@ -748,7 +749,8 @@ TEXT 1 Same as TEXT ALL (groups have numbers)
 GROUPS   → list group numbers
 COMMANDS → list commands</pre>
         <p class="small muted">SEND uses each member's preference (text or call). Members can text STOP, START, or JOIN.</p>
-        <p class="small muted" style="margin-bottom:0">📞 <b>Voice:</b> call ${esc(fmtPhone(o.twilio_number))} from a texter's phone, enter the group number, record, and press 1 to send it as calls to everyone.</p></div>
+        <p class="small muted">📞 <b>Voice:</b> call ${esc(fmtPhone(o.twilio_number))} from a texter's phone, enter the group number, record, and press 1 to send it as calls to everyone.</p>
+        <p class="small muted" style="margin-bottom:0">☎️ <b>Members who call</b> hear the latest announcement, then: 1 office · 2 leave a message · 3 hear again · 4 sign up · 9 stop.</p></div>
     </div>`;
 }
 
@@ -762,10 +764,13 @@ const SETTINGS_COLS = [
   { f: 'dnd_start', label: 'Quiet hours start (no calls)', type: 'time' }, { f: 'dnd_end', label: 'Quiet hours end', type: 'time', hint: 'EMERGENCY ignores quiet hours.' },
   { f: 'sms_prefix', label: 'Texts start with', hint: 'Shown before every text. Leave empty for "[Your organization] via CommunityConnect", which matches the registered carrier campaign. Carriers require texts to say who they are from.' },
   { f: 'sms_stop_footer', label: 'Add "Reply STOP to opt out." to texts', type: 'bool', hint: 'Recommended by carriers. Skipped automatically if your message already mentions STOP.' },
-  { f: 'forward_replies_phone', label: 'Forward member replies to phone', type: 'phone' },
-  { f: 'forward_replies_email', label: 'Forward replies to email', type: 'email', hint: 'Saved for email forwarding (coming soon).' },
-  { f: 'allow_auto_signup', label: 'Auto-add people who text JOIN', type: 'bool', hint: 'If off, they appear in Signup Requests for approval.' },
-  { f: 'allow_callback_voicemail', label: 'Allow callback voicemail', type: 'bool' },
+  { f: 'forward_replies_phone', label: 'Forward replies & voicemails to phone', type: 'phone', hint: 'Gets a text for every member reply, voicemail and signup request.' },
+  { f: 'forward_replies_extra', label: 'Also forward to these phones', hint: 'Optional. Separate several numbers with commas, e.g. 845-555-1234, 718-555-9876' },
+  { f: 'forward_replies_email', label: 'Also forward to email', hint: 'Optional. Several addresses can be separated with commas.' },
+  { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
+  { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
+  { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
+  { f: 'allow_auto_signup', label: 'Add new signups automatically', type: 'bool', hint: 'Applies to text JOIN and phone signups. If off, they appear in Signup Requests for approval.' },
   { f: 'default_voice', label: 'Default voice', type: 'select', opts: ['Standard', 'Male', 'Female'] },
   { f: 'contact_person', label: 'Main contact person' }, { f: 'contact_phone', label: 'Main contact phone', type: 'phone' }, { f: 'contact_email', label: 'Main contact email', type: 'email' },
 ];

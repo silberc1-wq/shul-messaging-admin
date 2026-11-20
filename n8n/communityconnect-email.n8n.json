@@ -1,0 +1,124 @@
+{
+ "name": "CommunityConnect \u2013 Email alerts",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "email-beb75a48e7415a3b3c52",
+    "options": {}
+   },
+   "id": "59f8b863-3494-4b6b-8a29-bc8b154639c7",
+   "name": "Email Request (from Supabase)",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    200
+   ],
+   "webhookId": "cdfe5a2b-ff32-4931-a812-94af837228a3"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "bcb31042-143a-4eee-8ec6-4deadf9f6c77",
+       "leftValue": "={{ $json.body.secret === 'PUT_THE_DISPATCH_SECRET_HERE' && !!$json.body.to }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "46021e62-6920-4364-993e-b9ae3abd5f88",
+   "name": "Allowed?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    240,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "fromEmail": "CommunityConnect <hello@nivolink.com>",
+    "toEmail": "={{ $json.body.to }}",
+    "subject": "={{ $json.body.subject }}",
+    "emailFormat": "text",
+    "text": "={{ $json.body.text }}",
+    "options": {
+     "appendAttribution": false
+    }
+   },
+   "id": "b3ae18f7-8212-4180-a847-1bc309de99b2",
+   "name": "Send Email",
+   "type": "n8n-nodes-base.emailSend",
+   "typeVersion": 2.1,
+   "position": [
+    480,
+    180
+   ],
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "content": "## CommunityConnect: email alerts\n\nSends reply / voicemail / signup alerts to each organization's **Forward replies to email**.\n\n1. Open **Send Email** \u2192 Credential \u2192 **Create new** (SMTP):\n   - Host: smtp.gmail.com, Port: 465, SSL/TLS: on\n   - User: hello@nivolink.com\n   - Password: the same Google **app password** you used in Supabase\n2. Save, then **Publish**.",
+    "height": 300,
+    "width": 460,
+    "color": 5
+   },
+   "id": "740db2b7-e314-451c-b71d-c59d44e83c8c",
+   "name": "Read Me",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    0,
+    -200
+   ]
+  }
+ ],
+ "connections": {
+  "Email Request (from Supabase)": {
+   "main": [
+    [
+     {
+      "node": "Allowed?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Allowed?": {
+   "main": [
+    [
+     {
+      "node": "Send Email",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    []
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "America/New_York"
+ },
+ "pinData": {},
+ "meta": {},
+ "tags": []
+}
