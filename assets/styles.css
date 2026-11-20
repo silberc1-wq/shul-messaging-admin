@@ -299,3 +299,21 @@ pre.cmd { background: #f4f2ec; border-radius: 10px; padding: 12px 14px; font-siz
 .ov-more summary { color: var(--sky-ink); }
 .login { background: var(--cream); }
 table.data th { background: #f7f9fc; }
+/* one theme everywhere: the old gold accents become sky blue */
+:root { --gold: #2b6fd6; --gold-soft: #e3edfb; }
+.btn.gold:hover { background: #1f5fbf; }
+.pill.gold { color: #1f5fbf; }
+.feature .ic { color: var(--sky-ink); }
+.logo-mark { color: #9cc0f5; }
+.bar.warn > span { background: #d99a1e; }
+.login { background: var(--cream); }
+/* phone menu on the public pages */
+.menu-btn { display: none; }
+.pub-menu { display: flex; flex-direction: column; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(20, 33, 61, .10); margin: 0 0 16px; overflow: hidden; }
+.pub-menu[hidden] { display: none; }
+.pub-menu a { padding: 14px 18px; color: var(--ink); text-decoration: none; font-weight: 500; border-bottom: 1px solid var(--line); }
+.pub-menu a:last-child { border-bottom: 0; color: var(--brand-2); }
+.pub-menu a:hover { background: var(--cream); }
+@media (max-width: 900px) { .menu-btn { display: inline-flex; } }
+@media (min-width: 901px) { .pub-menu { display: none !important; } }
+@media (max-width: 520px) { .topnav a.btn.secondary { display: none; } }
