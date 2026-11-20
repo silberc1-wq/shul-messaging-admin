@@ -728,6 +728,7 @@ async function overviewPage() {
   main.innerHTML = `
   <div class="ov">
     <div class="ov-hello">
+      <button class="btn secondary sm menu-btn" type="button" data-menu>☰ Menu</button>
       <h1>${hello}</h1>
       <p>${esc(o.name)} · What would you like to do?</p>
     </div>
