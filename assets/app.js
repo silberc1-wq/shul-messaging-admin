@@ -700,58 +700,91 @@ function head(title, desc, actions = '') {
 
 async function overviewPage() {
   const o = S.org; const main = $('#main');
-  main.innerHTML = head(o.name, 'Overview') + '<div class="empty">Loading…</div>';
-  const month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
-  const [contacts, texters, hist, pend, rep, sreq, usageRes, comp] = await Promise.all([
-    sb.from('contacts').select('active,method', { count: 'exact' }).eq('org_id', o.id).is('deleted_at', null),
-    sb.from('controllers').select('id', { count: 'exact', head: true }).eq('org_id', o.id).eq('active', true).is('deleted_at', null),
-    sb.from('message_history').select('*').eq('org_id', o.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(8),
-    sb.from('pending_messages').select('id', { count: 'exact', head: true }).eq('org_id', o.id).eq('status', 'PENDING CONFIRMATION').is('deleted_at', null),
+  main.innerHTML = '<div class="empty">Loading…</div>';
+  const [contacts, hist, rep, sreq, usageRes, comp] = await Promise.all([
+    sb.from('contacts').select('id', { count: 'exact', head: true }).eq('org_id', o.id).eq('active', true).is('deleted_at', null),
+    sb.from('message_history').select('group_name,message,created_at,audio_url').eq('org_id', o.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(1),
     sb.from('replies').select('id', { count: 'exact', head: true }).eq('org_id', o.id).neq('status', 'HANDLED').is('deleted_at', null),
     sb.from('signup_requests').select('id', { count: 'exact', head: true }).eq('org_id', o.id).eq('status', 'PENDING APPROVAL').is('deleted_at', null),
     sb.from('usage_monthly').select('*').eq('org_id', o.id).order('month', { ascending: false }).limit(1),
     sb.from('org_compliance').select('a2p_status').eq('org_id', o.id).maybeSingle(),
   ]);
-  const cs = contacts.data || []; const active = cs.filter(c => c.active).length; const calls = cs.filter(c => c.active && c.method === 'CALL').length;
   const thisMonth = new Date().toISOString().slice(0, 7);
   const u = (usageRes.data || [])[0]; const used = u && u.month === thisMonth ? Number(u.notifications) : 0;
-  const lim = o.notification_limit; const pct = lim ? Math.min(100, Math.round(used / lim * 100)) : 0;
-  const cpct = o.contact_limit ? Math.min(100, Math.round(active / o.contact_limit * 100)) : 0;
-  const plan = S.plans.find(p => p.id === o.plan_id);
-  const warn = [];
-  if (o.test_mode) warn.push('<b>Test Mode is ON</b>: only contacts marked "Test contact" receive messages. Turn it off in Settings.');
-  if (comp.data && comp.data.a2p_status !== 'CAMPAIGN APPROVED') warn.push(`Texting registration: ${pill(comp.data.a2p_status)}. <a href="#registration">Complete your registration details</a> so carriers deliver your texts.`);
-  if (o.paid_until && new Date(o.paid_until) < new Date()) warn.push(`Payment was due ${esc(fmtD(o.paid_until))}.`);
-  if (lim && pct >= 80) warn.push(`You've used ${pct}% of this month's messages.`);
-  main.innerHTML = head(o.name, [plan ? plan.name + ' plan' : '', o.paid_until ? 'Paid until ' + fmtD(o.paid_until) : ''].filter(Boolean).join(' · '),
-      '<a class="btn secondary" href="#scheduled">Schedule</a><a class="btn" href="#send">✉️ Send a message</a>') +
-    (warn.length ? `<div class="card panel" style="margin-bottom:16px;border-color:#efd9a8;background:#fffaf0">${warn.map(w => `<div style="padding:3px 0">⚠️ ${w}</div>`).join('')}</div>` : '') +
-    `<div class="stats">
-      <div class="card stat"><div class="k">Active contacts</div><div class="v">${num(active)}</div>${o.contact_limit ? `<div class="bar ${cpct >= 100 ? 'bad' : cpct >= 80 ? 'warn' : ''}"><span style="width:${cpct}%"></span></div><div class="small muted" style="margin-top:6px">${num(active)} of ${num(o.contact_limit)} · ${num(calls)} by phone call</div>` : ''}</div>
-      <div class="card stat"><div class="k">Messages this month</div><div class="v">${num(used)}</div>${lim ? `<div class="bar ${pct >= 100 ? 'bad' : pct >= 80 ? 'warn' : ''}"><span style="width:${pct}%"></span></div><div class="small muted" style="margin-top:6px">${num(used)} of ${num(lim)} texts + calls</div>` : ''}</div>
-      <div class="card stat"><div class="k">Texters</div><div class="v">${num(texters.count)}</div><div class="small muted"><a href="#controllers">Manage who can send</a></div></div>
-      <div class="card stat"><div class="k">Needs attention</div><div class="v">${num((pend.count || 0) + (rep.count || 0) + (sreq.count || 0))}</div>
-        <div class="small muted">${pend.count || 0} pending · <a href="#replies">${rep.count || 0} replies</a> · <a href="#signup_requests">${sreq.count || 0} signups</a></div></div>
+  const last = (hist.data || [])[0];
+  const phone = esc(fmtPhone(o.twilio_number));
+  const hr = new Date().getHours();
+  const hello = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+  const ic = d => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+
+  // only the things that really need a person's attention
+  const notes = [];
+  if (rep.count) notes.push(`<a href="#replies">💬 ${num(rep.count)} new ${rep.count === 1 ? 'reply' : 'replies'} from members</a>`);
+  if (sreq.count) notes.push(`<a href="#signup_requests">🙋 ${num(sreq.count)} ${sreq.count === 1 ? 'person wants' : 'people want'} to join</a>`);
+  if (o.test_mode) notes.push(`<a href="#settings">🧪 Test mode is on: only test contacts get messages</a>`);
+  if (comp.data && comp.data.a2p_status && comp.data.a2p_status !== 'CAMPAIGN APPROVED') notes.push(`<a href="#registration">📋 Finish your texting registration so texts can be delivered</a>`);
+  if (o.paid_until && new Date(o.paid_until) < new Date()) notes.push(`<span>💳 Your payment was due ${esc(fmtD(o.paid_until))}</span>`);
+
+  main.innerHTML = `
+  <div class="ov">
+    <div class="ov-hello">
+      <h1>${hello}</h1>
+      <p>${esc(o.name)} · What would you like to do?</p>
     </div>
-    <div class="two">
-      <div class="card panel"><h3>Recent announcements</h3>
-        ${(hist.data || []).map(h => `<div class="list-row"><div><span class="chip">${esc(h.group_name)}</span> ${esc(h.message?.slice(0, 80))}<div class="small muted">${esc(h.sender_name || '')} · ${esc(fmtDT(h.created_at))}</div></div>
-          <div style="text-align:right">${pill(h.status)}<div class="small muted">${num(h.sent_count)} texts · ${num(h.calls_made)} calls</div></div></div>`).join('') || '<p class="muted">No announcements yet.</p>'}
-        <p style="margin:12px 0 0"><a href="#history">See full history →</a></p></div>
-      <div class="card panel"><h3>Text these commands to ${esc(fmtPhone(o.twilio_number))}</h3>
-        <pre class="cmd">SEND MEN Mincha today at 6:45 PM
-TEXT ALL Please pay membership dues
-CALL ALL Important announcement
-EMERGENCY ALL Building closed today
-SCHEDULE BOARD 2026-12-01 19:00 Board meeting
-YES   → confirm      NO → cancel
-TEXT 1 Same as TEXT ALL (groups have numbers)
-GROUPS   → list group numbers
-COMMANDS → list commands</pre>
-        <p class="small muted">SEND uses each member's preference (text or call). Members can text STOP, START, or JOIN.</p>
-        <p class="small muted">📞 <b>Voice:</b> call ${esc(fmtPhone(o.twilio_number))} from a texter's phone, enter the group number, record, and press 1 to send it as calls to everyone.</p>
-        <p class="small muted" style="margin-bottom:0">☎️ <b>Members who call</b> hear the latest announcement, then: 1 office · 2 leave a message · 3 hear again · 4 sign up · 9 stop.</p></div>
-    </div>`;
+    ${notes.length ? `<div class="ov-notes">${notes.join('')}</div>` : ''}
+
+    <div class="ov-actions">
+      <a class="ov-action" href="#send" data-sendmode="PREF">
+        <span class="ov-ic">${ic('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>')}</span>
+        <b>Send an announcement</b>
+        <span>Type a message, choose who gets it, and send it as a text or a phone call.</span>
+      </a>
+      <a class="ov-action" href="#send" data-sendmode="VOICE">
+        <span class="ov-ic">${ic('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>')}</span>
+        <b>Record a voice message</b>
+        <span>Record from your computer. Everyone in the group gets a phone call that plays it.</span>
+      </a>
+      <a class="ov-action" href="#contacts">
+        <span class="ov-ic">${ic('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>')}</span>
+        <b>Add people</b>
+        <span>Add members one at a time, or upload your list from Excel.</span>
+      </a>
+    </div>
+
+    <h2 class="ov-h2">How it works</h2>
+    <p class="ov-sub">There are three ways to send an announcement. Use whichever is easiest.</p>
+    <div class="ov-how">
+      <div><span class="ov-num">1</span><b>From this website</b>
+        <p>Click <a href="#send">Send an announcement</a>, pick a group, and write your message. You'll see exactly how many people get it before you press send.</p></div>
+      <div><span class="ov-num">2</span><b>By texting from your phone</b>
+        <p>Text <b>${phone}</b> something like <i>SEND MEN Mincha at 6:45</i>. You'll get a text back asking you to reply <b>YES</b> to send it.</p>
+        <details class="ov-more"><summary>Show all text commands</summary>
+          <ul>
+            <li><b>SEND</b> group message: each person gets it the way they prefer (text or call)</li>
+            <li><b>TEXT</b> group message: texts only</li>
+            <li><b>CALL</b> group message: phone calls only</li>
+            <li><b>EMERGENCY</b> group message: sends right away, even at night</li>
+            <li><b>SCHEDULE</b> group 2026-12-01 19:00 message: sends later</li>
+            <li><b>YES</b> / <b>NO</b>: confirm or cancel</li>
+            <li><b>GROUPS</b>: lists your groups. Each group has a number, so <i>TEXT 1 …</i> is the same as <i>TEXT ALL …</i></li>
+          </ul></details></div>
+      <div><span class="ov-num">3</span><b>By calling in</b>
+        <p>Call <b>${phone}</b> from your phone. Choose the group on the keypad, record your message, listen to it, and press <b>1</b> to send.</p></div>
+    </div>
+
+    <div class="ov-members">
+      <b>What your members can do</b>
+      <p>Reply to any text: the reply is sent on to the office. Call <b>${phone}</b> to hear the latest announcement, reach the office, or leave a message.
+         They can stop anytime by texting <b>STOP</b>, or by pressing <b>9</b> when they call.</p>
+    </div>
+
+    <div class="ov-foot">
+      <span><a href="#contacts">${num(contacts.count || 0)} members</a></span>
+      <span>${num(used)} messages this month</span>
+      ${last ? `<span>Last announcement: <a href="#history">${last.audio_url ? '🎙️ voice message' : '“' + esc((last.message || '').slice(0, 40)) + ((last.message || '').length > 40 ? '…' : '') + '”'}</a> to ${esc(last.group_name)}, ${esc(fmtD(last.created_at))}</span>` : '<span>No announcements yet</span>'}
+    </div>
+  </div>`;
+  $$('[data-sendmode]').forEach(a => a.addEventListener('click', () => { try { sessionStorage.setItem('cc_send_mode', a.dataset.sendmode); } catch {} }));
 }
 
 const SETTINGS_COLS = [
@@ -997,6 +1030,7 @@ async function sendPage() {
     const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
+  try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
   f.msg.addEventListener('input', draw);
   f.group.addEventListener('change', loadReach); f.mode.addEventListener('change', loadReach);
   loadReach();
