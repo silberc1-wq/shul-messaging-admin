@@ -274,7 +274,7 @@ const VIEWS = {
       { f: 'billing_period', label: 'Billing', type: 'select', opts: ['MONTHLY', 'YEARLY'] },
       { f: 'status', label: 'Status', type: 'select', opts: ['ACTIVE', 'AWAITING PAYMENT', 'HOLD', 'SUSPENDED', 'CANCELLED'], render: v => pill(v) },
       { f: 'paid_until', label: 'Paid until', type: 'date' }, { f: 'monthly_fee', label: 'Monthly fee', type: 'money' }, { f: 'setup_fee', label: 'Setup fee', type: 'money', table: false },
-      { f: 'contact_limit', label: 'Contact limit', type: 'number', table: false }, { f: 'notification_limit', label: 'Monthly notifications', type: 'number', table: false },
+      { f: 'contact_limit', label: 'Contact limit', type: 'number', table: false, hint: 'Leave empty for unlimited contacts.' }, { f: 'notification_limit', label: 'Monthly notifications', type: 'number', table: false },
       { f: 'voice_minute_limit', label: 'Voice minutes', type: 'number', table: false },
       { f: 'contact_person', label: 'Contact person', table: false }, { f: 'contact_phone', label: 'Contact phone', type: 'phone', table: false },
       { f: 'contact_email', label: 'Contact email', type: 'email' }, { f: 'go_live_date', label: 'Go-live', type: 'date', table: false },
@@ -303,7 +303,7 @@ const VIEWS = {
     cols: [
       { f: 'sort_order', label: '#', type: 'number' }, { f: 'code', label: 'Code', req: true }, { f: 'name', label: 'Name', req: true },
       { f: 'tagline', label: 'Tagline', table: false }, { f: 'monthly_price', label: 'Monthly', type: 'money' }, { f: 'yearly_price', label: 'Yearly', type: 'money' },
-      { f: 'setup_fee', label: 'Setup', type: 'money' }, { f: 'contact_limit', label: 'Contacts', type: 'number' },
+      { f: 'setup_fee', label: 'Setup', type: 'money' }, { f: 'contact_limit', label: 'Contacts', type: 'number', render: v => v == null ? 'Unlimited' : esc(num(v)), hint: 'Leave empty for unlimited contacts.' },
       { f: 'notification_limit', label: 'Msgs / month', type: 'number' }, { f: 'voice_minute_limit', label: 'Voice min', type: 'number' },
       { f: 'extra_number_monthly', label: 'Extra # / mo', type: 'money', table: false },
       { f: 'sending_enabled', label: 'Can send', type: 'bool' }, { f: 'is_public', label: 'On website', type: 'bool' },
@@ -829,7 +829,7 @@ async function settingsPage() {
       <div>Organization number</div><div><b>${esc(fmtPhone(o.twilio_number))}</b></div>
       <div>Plan</div><div>${esc(plan?.name || o.plan || '—')} · ${esc((o.billing_period || '').toLowerCase())}</div>
       <div>Status</div><div>${pill(o.status)}${o.paid_until ? ` · paid until ${esc(fmtD(o.paid_until))}` : ''}</div>
-      <div>Limits</div><div>${num(o.contact_limit)} contacts · ${num(o.notification_limit)} messages/month · ${num(o.voice_minute_limit)} voice minutes</div>
+      <div>Limits</div><div>${o.contact_limit ? num(o.contact_limit) + ' contacts' : 'Unlimited contacts'} · ${num(o.notification_limit)} messages/month · ${num(o.voice_minute_limit)} voice minutes</div>
     </div><p class="small muted" style="margin:10px 0 0">To change your plan or add a phone number, email <a href="mailto:${esc(cfg.supportEmail)}">${esc(cfg.supportEmail)}</a>.</p></div>` });
 }
 
