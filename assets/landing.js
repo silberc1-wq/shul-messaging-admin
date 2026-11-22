@@ -110,7 +110,7 @@ function openSignup(code) {
       <div class="grid2">
         <div class="field"><label>First name *</label><input name="rep_first_name" required maxlength="100" autocomplete="given-name"></div>
         <div class="field"><label>Last name *</label><input name="rep_last_name" required maxlength="100" autocomplete="family-name"></div>
-        <div class="field" data-only="COMMUNITY"><label>Title</label><input name="rep_title" placeholder="Rabbi, Executive Director…" maxlength="100"></div>
+        <div class="field" data-only="COMMUNITY"><label>Title</label><input name="rep_title" placeholder="President, Executive Director…" maxlength="100"></div>
         <div class="field"><label>Mobile phone *</label><input name="phone" type="tel" maxlength="20" autocomplete="tel"></div>
         <div class="field"><label>Second phone</label><input name="phone2" type="tel" maxlength="20" placeholder="Home or office (optional)"></div>
       </div>
