@@ -1026,7 +1026,7 @@ async function sendPage() {
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
             <button type="button" class="btn secondary sm" id="polladd">+ Add answer</button>
             <label class="small" style="display:flex;gap:6px;align-items:center">Open for <select id="polldays"><option value="1">1 day</option><option value="3" selected>3 days</option><option value="7">1 week</option><option value="14">2 weeks</option></select></label></div>
-          <div class="hint" style="margin-top:8px">Polls go out as texts only, since people answer by text.</div></div></div>
+          <div class="hint" style="margin-top:8px" id="pollnote">Polls go to texting members only, since people answer by text. Members set to CALL are left out.</div></div></div>
       <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
       <div class="field" id="flyerbox"><label>Flyer (optional)</label>
         <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
@@ -1178,6 +1178,7 @@ async function sendPage() {
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
       <div>Phone calls</div><div><b>${num(calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
+      ${reach.skipped_call_only ? `<div>Left out</div><div class="small" style="color:var(--warn)">${num(reach.skipped_call_only)} set to CALL (polls are text only)</div>` : ''}
       <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? `<div class="small muted">${msg ? 'Call members hear your typed message only, never the flyer.' : 'No message typed: only texting members get the flyer, so call members won\'t be called.'}</div>` : ''}</div>
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
     const bc = $('#badchars');
@@ -1271,7 +1272,7 @@ async function sendPage() {
   f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
   try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
@@ -1312,7 +1313,7 @@ async function sendPage() {
       pollId = pr.data;
     }
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: textOnly ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
+      p_mode: textOnly ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
     toast(poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
