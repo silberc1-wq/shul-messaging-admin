@@ -1,5 +1,5 @@
 {
- "name": "CommunityConnect \u2013 Email alerts",
+ "name": "CommunityConnect \u2013 Email",
  "nodes": [
   {
    "parameters": {
@@ -52,14 +52,16 @@
   },
   {
    "parameters": {
-    "fromEmail": "CommunityConnect <hello@nivolink.com>",
+    "fromEmail": "={{ ($json.body.from_name || 'CommunityConnect').replace(/[<>\"\\r\\n]/g, '') + ' <hello@nivolink.com>' }}",
     "toEmail": "={{ $json.body.to }}",
     "subject": "={{ $json.body.subject }}",
-    "emailFormat": "text",
+    "emailFormat": "both",
     "text": "={{ $json.body.text }}",
     "options": {
-     "appendAttribution": false
-    }
+     "appendAttribution": false,
+     "replyTo": "={{ $json.body.reply_to || '' }}"
+    },
+    "html": "={{ $json.body.html || '' }}"
    },
    "id": "b3ae18f7-8212-4180-a847-1bc309de99b2",
    "name": "Send Email",
@@ -73,7 +75,7 @@
   },
   {
    "parameters": {
-    "content": "## CommunityConnect: email alerts\n\nSends reply / voicemail / signup alerts to each organization's **Forward replies to email**.\n\n1. Open **Send Email** \u2192 Credential \u2192 **Create new** (SMTP):\n   - Host: smtp.gmail.com, Port: 465, SSL/TLS: on\n   - User: hello@nivolink.com\n   - Password: the same Google **app password** you used in Supabase\n2. Save, then **Publish**.",
+    "content": "## CommunityConnect: email\n\nSends (1) announcements to members set to EMAIL or \"also email\", and (2) reply / voicemail / signup alerts to each organization's **Forward replies to email**.\n\n1. Open **Send Email** \u2192 Credential \u2192 **Create new** (SMTP):\n   - Host: smtp.gmail.com, Port: 465, SSL/TLS: on\n   - User: hello@nivolink.com\n   - Password: the same Google **app password** you used in Supabase\n2. Save, then **Publish**.",
     "height": 300,
     "width": 460,
     "color": 5

@@ -29,6 +29,7 @@ function toast(msg, isError) {
 function friendlyError(e) {
   const m = e?.message || '';
   if (e?.code === '23505' && /contacts_org_phone/.test(m)) return 'This phone number is already in your contacts. Search for it and edit that person instead.';
+  if (e?.code === '23505' && /contacts_org_email/.test(m)) return 'This email address is already in your contacts. Search for it and edit that person instead.';
   if (e?.code === '23505') return 'This is a duplicate: it already exists.';
   return m;
 }
@@ -141,22 +142,26 @@ const confirmBox = (title, text, saveText = 'Yes', danger = true) =>
    VIEW DEFINITIONS — one per tab from the old Google Sheets
    ============================================================ */
 const ROLE_OPTS = ['FULL ADMIN', 'GROUP ADMIN'];
-const METHOD_OPTS = ['TEXT', 'CALL'];
+const METHOD_OPTS = ['TEXT', 'CALL', 'EMAIL'];
 const groupOpts = () => ['ALL', ...S.groups.filter(g => g.active && g.code !== 'ALL').map(g => g.code)];
 
 const VIEWS = {
   // ----- organization -----
   contacts: { title: 'Contacts', perm: 'contacts', icon: '👥', table: 'contacts', scope: 'org', order: ['name', true], soft: true,
-    desc: 'Everyone who receives announcements. Choose TEXT or CALL for each person.',
+    desc: 'Everyone who receives announcements. Choose TEXT, CALL or EMAIL for each person.',
     cols: [
-      { f: 'name', label: 'Name', req: true }, { f: 'phone', label: 'Phone', type: 'phone' },
-      { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS, req: true },
+      { f: 'name', label: 'Name', req: true }, { f: 'phone', label: 'Phone', type: 'phone', hint: 'Needed for TEXT and CALL.' },
+      { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS, req: true,
+        render: (v, r) => `${esc(v)}${r.also_email && v !== 'EMAIL' ? ' <span class="muted small">+ email</span>' : ''}` },
+      { f: 'email', label: 'Email', type: 'email', render: (v, r) => v ? `<span class="small">${esc(v)}</span>${r.email_opt_out_at ? ' <span class="pill bad">unsubscribed</span>' : ''}` : '',
+        hint: 'Needed for EMAIL. Each person can have their own email address.' },
+      { f: 'also_email', label: 'Also send by email', type: 'bool', table: false, hint: 'For TEXT and CALL members: they also get every announcement by email (free).' },
       { f: 'groups', label: 'Groups', type: 'groups' }, { f: 'active', label: 'Active', type: 'bool' },
       { f: 'language', label: 'Language', type: 'select', opts: ['English', 'Yiddish', 'Hebrew', 'Russian', 'Spanish', 'French'], table: false },
       { f: 'is_test', label: 'Test contact', type: 'bool', table: false, hint: 'When Test Mode is on, only test contacts receive messages.' },
       { f: 'signup_source', label: 'Source', table: false }, { f: 'notes', label: 'Notes', type: 'longtext', table: false },
       { f: 'created_at', label: 'Added', type: 'date', edit: false },
-    ], defaults: { method: 'TEXT', active: true, language: 'English', signup_source: 'Website' } },
+    ], defaults: { method: 'TEXT', active: true, language: 'English', signup_source: 'Website', also_email: false } },
 
   groups: { title: 'Groups', perm: 'contacts', icon: '🗂️', table: 'groups', scope: 'org', order: ['number', true], soft: true,
     desc: 'Departments and lists. Texters can send by name or number, e.g. SEND WOMEN … or SEND 7 …, and pick the number on the phone when recording.',
@@ -236,7 +241,7 @@ const VIEWS = {
   signup_requests: { title: 'Signup Requests', perm: 'contacts', icon: '🙋', table: 'signup_requests', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'People who texted JOIN (when auto-signup is off). Approve to add them to Contacts.',
     cols: [
-      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name_given', label: 'Name' }, { f: 'phone', label: 'Phone', type: 'phone' },
+      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name_given', label: 'Name' }, { f: 'phone', label: 'Phone', type: 'phone' }, { f: 'email', label: 'Email', type: 'email' },
       { f: 'requested_groups', label: 'Groups', type: 'groups' }, { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS },
       { f: 'status', label: 'Status', type: 'status', edit: false }, { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ],
@@ -508,12 +513,13 @@ function mapColumns(rows) {
     first: pick(hdr, ['first', 'firstname', 'fname', 'given', 'givenname']),
     last: pick(hdr, ['last', 'lastname', 'lname', 'surname', 'familyname']),
     phone: pick(hdr, ['phone', 'phonenumber', 'mobile', 'mobilephone', 'cell', 'cellphone', 'cellnumber', 'number', 'tel', 'telephone', 'whatsapp']),
+    email: pick(hdr, ['email', 'emailaddress', 'mail', 'email1', 'eaddress']),
     method: pick(hdr, ['method', 'type', 'preference', 'contactmethod', 'textorcall', 'via']),
     groups: pick(hdr, ['groups', 'group', 'lists', 'list', 'department', 'departments', 'tags', 'category']),
     language: pick(hdr, ['language', 'lang']),
     notes: pick(hdr, ['notes', 'note', 'comments', 'comment']),
   };
-  let header = m.phone >= 0 || m.name >= 0 || m.first >= 0;
+  let header = m.phone >= 0 || m.email >= 0 || m.name >= 0 || m.first >= 0;
   if (m.phone < 0) { // no recognizable header: find the column that is mostly phone numbers
     const sample = rows.slice(header ? 1 : 0, 30); const width = Math.max(...rows.map(r => r.length));
     let best = -1, bestN = 0;
@@ -528,15 +534,15 @@ function importContacts() {
   let parsed = [];
   const f = modal('Import contacts', `
     <p class="muted" style="margin-top:0">Upload an Excel (.xlsx) or CSV file with one person per row. Columns we recognize:
-      <b>Name</b> (or First / Last), <b>Phone</b>, and optionally <b>Method</b> (Text or Call), <b>Groups</b> (separated by commas), Language, Notes.
+      <b>Name</b> (or First / Last), <b>Phone</b> and/or <b>Email</b>, and optionally <b>Method</b> (Text, Call or Email), <b>Groups</b> (separated by commas), Language, Notes.
       <a href="#" id="imp-sample">Download a sample file</a>.</p>
     <div class="field"><input type="file" name="file" accept=".csv,.xlsx,.xls,.txt" required></div>
     <div class="grid2">
-      <div class="field"><label>If Method is blank</label><select name="defmethod"><option value="TEXT">Text message</option><option value="CALL">Phone call</option></select></div>
+      <div class="field"><label>If Method is blank</label><select name="defmethod"><option value="TEXT">Text message</option><option value="CALL">Phone call</option><option value="EMAIL">Email</option></select></div>
       <div class="field"><label>Also add everyone to group</label><select name="addgroup"><option value="">(none)</option>${groupOptions}</select></div>
     </div>
     <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin-bottom:10px"><input type="checkbox" name="update" checked style="margin-top:3px">
-      Update people who are already in my contacts (matched by phone; their groups are added to, never removed)</label>
+      Update people who are already in my contacts (matched by phone or email; their groups are added to, never removed)</label>
     <div id="imp-preview"></div>
     <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin-top:12px"><input type="checkbox" name="consent" style="margin-top:3px">
       I confirm everyone on this list agreed to receive messages from our organization. People who texted STOP are skipped automatically.</label>`,
@@ -554,13 +560,13 @@ function importContacts() {
     const parts = [`${num(tot.added)} added`, `${num(tot.updated)} updated`];
     if (tot.unchanged) parts.push(`${num(tot.unchanged)} already there`);
     if (tot.skipped_optout) parts.push(`${num(tot.skipped_optout)} skipped (texted STOP)`);
-    if (tot.invalid + tot.duplicates) parts.push(`${num(tot.invalid + tot.duplicates)} skipped (bad or repeated number)`);
+    if (tot.invalid + tot.duplicates) parts.push(`${num(tot.invalid + tot.duplicates)} skipped (bad or repeated phone / email)`);
     toast('Import done: ' + parts.join(' · ') + (tot.new_groups.length ? ` · new groups: ${tot.new_groups.join(', ')}` : ''));
     await loadGroups(); tablePage('contacts');
   } });
   $('#imp-sample', f).addEventListener('click', e => {
     e.preventDefault();
-    const csv = 'Name,Phone,Method,Groups\nMoshe Klein,(845) 555-0101,Text,"MEN, BOARD"\nSarah Klein,845-555-0102,Text,WOMEN\nYosef Gold,8455550103,Call,MEN\n';
+    const csv = 'Name,Phone,Email,Method,Groups\nMoshe Klein,(845) 555-0101,,Text,"MEN, BOARD"\nSarah Klein,845-555-0102,sarah@example.com,Text,WOMEN\nYosef Gold,8455550103,,Call,MEN\nRivka Stern,,rivka@example.com,Email,WOMEN\n';
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'contacts-sample.csv'; a.click();
   });
   f.file.addEventListener('change', async () => {
@@ -570,18 +576,19 @@ function importContacts() {
     let rows;
     try { rows = await readSheet(file); } catch (err) { console.error(err); box.innerHTML = '<p style="color:var(--bad)">Could not read that file. Try saving it as CSV (in Excel: File → Save As → CSV) and upload again.</p>'; return; }
     const { m, header } = mapColumns(rows);
-    if (m.phone < 0) { box.innerHTML = '<p style="color:var(--bad)">We couldn\'t find a phone number column. Make sure the file has a column named <b>Phone</b>.</p>'; return; }
-    const existing = new Set(T.rows.filter(r => !r.deleted_at).map(r => String(r.phone || '').replace(/\D/g, '').slice(-10)));
+    if (m.phone < 0 && m.email < 0) { box.innerHTML = '<p style="color:var(--bad)">We couldn\'t find a phone or email column. Make sure the file has a column named <b>Phone</b> or <b>Email</b>.</p>'; return; }
+    const existing = new Set(T.rows.filter(r => !r.deleted_at).flatMap(r => [String(r.phone || '').replace(/\D/g, '').slice(-10), (r.email || '').toLowerCase()]).filter(Boolean));
     const seen = new Set(); let bad = [], dup = 0, upd = 0;
     for (const r of rows.slice(header ? 1 : 0)) {
       const cellv = i => i >= 0 ? String(r[i] ?? '').trim() : '';
       const d = phoneDigits(cellv(m.phone));
+      const em = /^[^@\s<>"',;]+@[^@\s<>"',;]+\.[a-z]{2,}$/i.test(cellv(m.email)) ? cellv(m.email).toLowerCase() : '';
       const name = cellv(m.name) || [cellv(m.first), cellv(m.last)].filter(Boolean).join(' ');
-      if (!d) { bad.push(name || cellv(m.phone) || '(blank)'); continue; }
-      if (seen.has(d)) { dup++; continue; } seen.add(d);
-      if (existing.has(d)) upd++;
+      if (!d && !em) { bad.push(name || cellv(m.phone) || cellv(m.email) || '(blank)'); continue; }
+      if ((d && seen.has(d)) || (em && seen.has(em))) { dup++; continue; } if (d) seen.add(d); if (em) seen.add(em);
+      if ((d && existing.has(d)) || (em && existing.has(em))) upd++;
       const mt = cellv(m.method).toLowerCase();
-      parsed.push({ name, phone: d, method: /call|voice|phone|landline/.test(mt) ? 'CALL' : mt ? 'TEXT' : '',
+      parsed.push({ name, phone: d, email: em, method: !d ? 'EMAIL' : /mail/.test(mt) && em ? 'EMAIL' : /call|voice|phone|landline/.test(mt) ? 'CALL' : mt ? 'TEXT' : '',
         groups: cellv(m.groups).split(/[,;|/]+/).map(x => x.trim().toUpperCase().replace(/\s+/g, '_')).filter(x => x && x !== 'ALL'),
         language: cellv(m.language), notes: cellv(m.notes) });
     }
@@ -591,13 +598,13 @@ function importContacts() {
     const after = existing.size + parsed.length - upd;
     box.innerHTML = `<div class="card" style="padding:14px 16px;box-shadow:none;background:#fcfbf8">
       <b>${num(parsed.length)} people ready</b>: ${num(parsed.length - upd)} new${upd ? `, ${num(upd)} already in your contacts` : ''}.
-      ${bad.length ? `<br><span style="color:var(--bad)">${num(bad.length)} row${bad.length > 1 ? 's' : ''} skipped, missing or bad phone number: ${esc(bad.slice(0, 5).join(', '))}${bad.length > 5 ? '…' : ''}</span>` : ''}
+      ${bad.length ? `<br><span style="color:var(--bad)">${num(bad.length)} row${bad.length > 1 ? 's' : ''} skipped, no good phone number or email: ${esc(bad.slice(0, 5).join(', '))}${bad.length > 5 ? '…' : ''}</span>` : ''}
       ${dup ? `<br><span class="muted">${num(dup)} repeated number${dup > 1 ? 's' : ''} in the file will be added once.</span>` : ''}
       ${newGroups.length ? `<br><span class="muted">New groups will be created: ${esc(newGroups.join(', '))}</span>` : ''}
       ${limit && after > limit ? `<br><span style="color:var(--warn)">Your plan includes ${num(limit)} contacts; after this import you'll have about ${num(after)}.</span>` : ''}
       </div>
-      <div class="table-wrap" style="margin-top:10px"><table class="data"><thead><tr><th>Name</th><th>Phone</th><th>Method</th><th>Groups</th></tr></thead><tbody>
-      ${parsed.slice(0, 6).map(p => `<tr><td>${esc(p.name)}</td><td class="nowrap">${esc(fmtPhone(p.phone))}</td><td>${esc(p.method || f.defmethod.value)}</td><td>${p.groups.map(g => `<span class="chip">${esc(g)}</span>`).join('')}</td></tr>`).join('')}
+      <div class="table-wrap" style="margin-top:10px"><table class="data"><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Method</th><th>Groups</th></tr></thead><tbody>
+      ${parsed.slice(0, 6).map(p => `<tr><td>${esc(p.name)}</td><td class="nowrap">${esc(p.phone ? fmtPhone(p.phone) : '')}</td><td class="small">${esc(p.email)}</td><td>${esc(p.method || f.defmethod.value)}</td><td>${p.groups.map(g => `<span class="chip">${esc(g)}</span>`).join('')}</td></tr>`).join('')}
       </tbody></table></div>${parsed.length > 6 ? `<p class="small muted">…and ${num(parsed.length - 6)} more</p>` : ''}`;
   });
 }
@@ -896,11 +903,12 @@ function deliveryLine(x) {
   if (x.delivered || x.failed || x.pending) parts.push(`💬 <b>${num(x.delivered)}</b> delivered${x.failed ? ` · <span style="color:var(--bad)">${num(x.failed)} failed</span>` : ''}${x.pending ? ` · ${num(x.pending)} waiting` : ''}`);
   const calls = x.answered + x.voicemail + x.no_answer + x.call_failed + x.call_pending;
   if (calls) parts.push(`📞 <b>${num(x.answered)}</b> answered${x.voicemail ? ` · ${num(x.voicemail)} voicemail` : ''}${x.no_answer ? ` · ${num(x.no_answer)} no answer` : ''}${x.call_failed ? ` · <span style="color:var(--bad)">${num(x.call_failed)} failed</span>` : ''}`);
+  if (x.emailed) parts.push(`📧 ${num(x.emailed)} emailed`);
   if (x.replies) parts.push(`↩️ ${num(x.replies)} replied`);
   return `<div class="small" style="line-height:1.5;min-width:190px">${parts.join('<br>')}</div>`;
 }
 const RESULT_LABEL = { delivered: ['Delivered', 'ok'], failed: ['Failed', 'bad'], pending: ['Waiting', 'warn'], answered: ['Answered', 'ok'],
-  voicemail: ['Voicemail', 'warn'], no_answer: ['No answer', 'bad'] };
+  voicemail: ['Voicemail', 'warn'], no_answer: ['No answer', 'bad'], emailed: ['Emailed', 'ok'] };
 const ERR_LABEL = { '30003': 'Phone off or out of service', '30004': 'Blocked by the person', '30005': 'Number does not exist', '30006': 'Landline or can\'t get texts',
   '30007': 'Blocked by the carrier as spam', '30008': 'Unknown carrier error', '30034': 'Number not registered yet', '21610': 'Person texted STOP' };
 const secs = n => n == null ? '' : n < 60 ? `${n} sec` : `${Math.floor(n / 60)} min ${n % 60} sec`;
@@ -916,21 +924,22 @@ async function deliveryReport(h) {
       ${x.delivered + x.failed + x.pending ? stat(x.delivered, 'texts delivered', 'ok') + (x.failed ? stat(x.failed, 'texts failed', 'bad') : '') + (x.pending ? stat(x.pending, 'waiting') : '') : ''}
       ${callsTotal ? stat(x.answered, 'calls answered', 'ok') + (x.voicemail ? stat(x.voicemail, 'went to voicemail') : '') + (x.no_answer ? stat(x.no_answer, 'no answer', 'bad') : '') + (x.call_failed ? stat(x.call_failed, 'calls failed', 'bad') : '') : ''}
       ${callsTotal ? stat(Math.round((x.listen_seconds || 0) / 60), 'minutes listened') : ''}
+      ${x.emailed ? stat(x.emailed, 'emails sent', 'ok') : ''}
       ${stat(x.replies, 'replied')}
     </div>
     <p class="small muted" style="margin:10px 0">Texts can show <b>delivered</b> to the phone. Phones don't report whether a text was opened.${callsTotal && !S.org.detect_voicemail ? ' Calls picked up by voicemail count as answered. To tell them apart, turn on answering machine detection in Settings.' : ''}</p>
     <div class="toolbar" style="padding:0;margin:0 0 8px"><input type="search" id="repq" placeholder="Search name or number…">
       <select id="repf"><option value="">Everyone</option>${Object.entries(RESULT_LABEL).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}<option value="replied">Replied</option></select></div>
-    <div class="table-wrap" style="max-height:50vh;overflow:auto"><table class="data"><thead><tr><th>Name</th><th>Phone</th><th>How</th><th>Result</th><th>Listened</th><th>Reply</th></tr></thead><tbody id="repbody"></tbody></table></div>`;
+    <div class="table-wrap" style="max-height:50vh;overflow:auto"><table class="data"><thead><tr><th>Name</th><th>Phone / email</th><th>How</th><th>Result</th><th>Listened</th><th>Reply</th></tr></thead><tbody id="repbody"></tbody></table></div>`;
   modal('Delivery report', body, { wide: true });
   $('#repq').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
   const drawRows = () => {
     const q = ($('#repq').value || '').toLowerCase(), f = $('#repf').value;
-    const list = rows.filter(r => (!q || (r.name || '').toLowerCase().includes(q) || (r.phone || '').includes(q.replace(/\D/g, '') || '~'))
+    const list = rows.filter(r => (!q || (r.name || '').toLowerCase().includes(q) || (r.email || '').includes(q) || (r.phone || '').includes(q.replace(/\D/g, '') || '~'))
       && (!f || (f === 'replied' ? !!r.replied : r.result === f)));
     $('#repbody').innerHTML = list.map(r => { const [l, c] = RESULT_LABEL[r.result] || [r.result, ''];
       const why = r.error_code ? ERR_LABEL[r.error_code] || ('Error ' + r.error_code) : '';
-      return `<tr><td>${esc(r.name || '—')}</td><td class="nowrap">${esc(fmtPhone(r.phone))}</td><td>${r.channel === 'call' ? '📞 Call' : '💬 Text'}</td>
+      return `<tr><td>${esc(r.name || '—')}</td><td class="nowrap">${r.phone ? esc(fmtPhone(r.phone)) : `<span class="small">${esc(r.email || '')}</span>`}</td><td>${r.channel === 'call' ? '📞 Call' : r.channel === 'email' ? '📧 Email' : '💬 Text'}</td>
         <td><span class="pill ${c}">${esc(l)}</span>${why ? `<div class="small muted">${esc(why)}</div>` : ''}</td>
         <td class="nowrap">${r.channel === 'call' && r.duration ? esc(secs(r.duration)) : ''}</td><td class="small">${esc(r.replied || '')}</td></tr>`; }).join('')
       || '<tr><td colspan="6" class="empty">Nobody matches.</td></tr>';
@@ -998,7 +1007,7 @@ async function sendPage() {
       <div class="grid2">
         <div class="field"><label>To group</label><select name="group">${groups.map(g => { const n = S.groups.find(x => x.code === g)?.number; return `<option value="${esc(g)}">${n ? n + ' · ' : ''}${esc(g)}</option>`; }).join('')}</select></div>
         <div class="field"><label>How</label><select name="mode">
-          <option value="PREF">By each member's preference (text or call)</option><option value="TEXT">Text only</option>
+          <option value="PREF">By each member's preference (text, call or email)</option><option value="TEXT">Text only</option>
           <option value="CALL">Phone call only</option><option value="VOICE">🎙️ Voice recording (calls everyone)</option><option value="EMERGENCY">🚨 Emergency (ignores quiet hours)</option></select></div>
       </div>
       <label id="vdndrow" class="hidden" style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)">
@@ -1166,7 +1175,7 @@ async function sendPage() {
     const t = (usePre ? pre : '') + msg + (useFoot ? foot : '');          // what is actually sent (heading + message + STOP line)
     const fixed = segInfo((usePre ? pre : '') + (useFoot ? foot : '')).chars; // the part added automatically
     const i = segInfo(t); const mine = Math.max(0, i.chars - fixed);
-    const sms = reach ? reach.sms : 0, calls = reach && !pollOn() ? reach.calls : 0;
+    const sms = reach ? reach.sms : 0, calls = reach && !pollOn() ? reach.calls : 0, emails = reach && ['PREF', 'EMERGENCY'].includes(mode) && !pollOn() ? (reach.email || 0) : 0;
     $('#calc').innerHTML = `
       <div>Encoding</div><div>${i.encoding === 'GSM-7' ? '<span class="pill ok">GSM-7 (standard)</span>' : '<span class="pill warn">Unicode</span>'}</div>
       <div>Characters</div><div>${num(i.chars)} <span class="muted small">= ${num(fixed)} heading and STOP line + ${num(mine)} your message</span></div>
@@ -1177,6 +1186,7 @@ async function sendPage() {
     $('#reach').innerHTML = reach ? `
       <div>Texts</div><div><b>${num(sms)}</b> people</div>
       <div>Phone calls</div><div><b>${num(calls)}</b> people</div>
+      ${emails ? `<div>Emails</div><div><b>${num(emails)}</b> people <span class="muted small">(free)</span></div>` : ''}
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
       ${reach.skipped_call_only ? `<div>Left out</div><div class="small" style="color:var(--warn)">${num(reach.skipped_call_only)} set to CALL (polls are text only)</div>` : ''}
       <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? `<div class="small muted">${msg ? 'Call members hear your typed message only, never the flyer.' : 'No message typed: only texting members get the flyer, so call members won\'t be called.'}</div>` : ''}</div>
@@ -1295,11 +1305,11 @@ async function sendPage() {
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const full = (pre && t.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
-    if (flyerOnly && !reach.sms) return toast('Everyone in this group gets calls, and a flyer can\'t be heard. Type a message to call them.', true);
+    if (flyerOnly && !reach.sms && !reach.email) return toast('Everyone in this group gets calls, and a flyer can\'t be heard. Type a message to call them.', true);
     if (poll && !reach.sms) return toast('Nobody in this group gets texts, so nobody could answer the poll.', true);
     const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = textOnly ? 0 : reach.calls;
     const ok = await confirmBox(poll ? '📊 Send this poll?' : mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
-      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + callsOut)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
+      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''}${!poll && ['PREF', 'EMERGENCY'].includes(mode) && reach.email ? ` + ${num(reach.email)} emails` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + callsOut)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
        <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
@@ -1313,7 +1323,7 @@ async function sendPage() {
       pollId = pr.data;
     }
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: textOnly ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media });
+      p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
     toast(poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
