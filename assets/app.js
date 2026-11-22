@@ -1001,6 +1001,8 @@ async function sendPage() {
           <option value="PREF">By each member's preference (text or call)</option><option value="TEXT">Text only</option>
           <option value="CALL">Phone call only</option><option value="VOICE">🎙️ Voice recording (calls everyone)</option><option value="EMERGENCY">🚨 Emergency (ignores quiet hours)</option></select></div>
       </div>
+      <label id="vdndrow" class="hidden" style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)">
+          <input type="checkbox" name="vdnd" style="margin-top:3px"> It's quiet hours now, so calls are held back. Check this to call them anyway.</label>
       <div id="voicebox" class="hidden">
         <div class="field"><label>Recording</label>
           <div class="groups-pick" style="margin-bottom:10px"><label><input type="radio" name="vsrc" value="rec" checked> 🎙️ Record now</label><label><input type="radio" name="vsrc" value="file"> Upload a file</label><label><input type="radio" name="vsrc" value="url"> Link to a recording</label></div>
@@ -1011,8 +1013,6 @@ async function sendPage() {
           <input type="url" name="vurl" id="vurl" class="hidden" placeholder="https://…/announcement.mp3">
           <div class="hint hidden" id="vfilehint">MP3 or WAV, up to 15 MB. Phone recordings in other formats (like .m4a) need to be saved as MP3 first.</div></div>
         <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
-        <label id="vdndrow" class="hidden" style="display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)">
-          <input type="checkbox" name="vdnd" style="margin-top:3px"> It's quiet hours now, so calls are held back. Check this to call everyone anyway.</label>
         <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
       </div>
       <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
@@ -1196,7 +1196,7 @@ async function sendPage() {
     $('#calc').classList.toggle('hidden', voice); $('#badchars').style.display = voice ? 'none' : $('#badchars').style.display;
     $('#calch').textContent = voice ? 'Voice recording' : 'Message calculator';
     $('#segnote').classList.toggle('hidden', voice); $('#flyerbox').classList.toggle('hidden', voice); $('#pollbox').classList.toggle('hidden', voice); $('#namehint').classList.toggle('hidden', voice);
-    $('#vdndrow').classList.toggle('hidden', !(voice && reach && (reach.skipped_dnd > 0 || f.vdnd.checked)));
+    $('#vdndrow').classList.toggle('hidden', !(mode !== 'EMERGENCY' && !pollOn() && reach && (reach.skipped_dnd > 0 || f.vdnd.checked)));
     if (voice && reach) $('#reach').innerHTML = `<div>Phone calls</div><div><b>${num(reach.calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} (quiet hours)</div>` : ''}
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}`;
@@ -1272,7 +1272,7 @@ async function sendPage() {
   f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (!pollOn() && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
   try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
@@ -1313,7 +1313,7 @@ async function sendPage() {
       pollId = pr.data;
     }
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: textOnly ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
+      p_mode: textOnly ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
     toast(poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
