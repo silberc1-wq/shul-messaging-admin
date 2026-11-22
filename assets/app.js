@@ -870,6 +870,7 @@ function segInfo(text) {
 }
 const fixSmart = t => [...t].map(c => SMART[c] ?? c).join('');
 
+const LINK_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|org|net|us|io|info|co|me|ly|gl)\b)/i, PHONE_RE = /(\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/;
 const NAME_RE = /\{\s*(name|first\s*name|firstname|first)\s*\}/gi, FULL_RE = /\{\s*(full\s*name|fullname)\s*\}/gi;
 const personalize = (t, name) => t.replace(FULL_RE, name || 'Friend').replace(NAME_RE, (name || '').split(' ')[0] || 'Friend');
 async function sendPage() {
@@ -907,12 +908,13 @@ async function sendPage() {
       </div>
       <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
         <div class="hint" id="namehint">Tip: type <b>{name}</b> to greet each person by their first name, e.g. "Dear {name}, …"</div>
-        <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div></div>
+        <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div>
+        <div id="linkwarn" class="small" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad)">⚠️ Your message has a web address or phone number. Your texting registration doesn't allow these, so carriers may block it. Please remove it.</div></div>
       <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
       <div class="field" id="flyerbox"><label>Flyer (optional)</label>
         <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
           <label class="btn secondary sm" style="cursor:pointer">📎 Add a flyer<input type="file" id="flyer" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.heic,.heif,.pdf,.doc,.docx" hidden></label>
-          <div id="flyerinfo" class="small muted" style="flex:1;min-width:200px">Any picture (including iPhone photos), a PDF, or a Word file. It's turned into a JPG picture so it shows right inside the text.</div>
+          <div id="flyerinfo" class="small muted" style="flex:1;min-width:200px">Any picture (including iPhone photos), a PDF, or a Word file. It's turned into a JPG picture that shows right inside the text.</div>
         </div>
         <div id="flyerprev" class="hidden" style="margin-top:10px;display:flex;gap:12px;align-items:flex-start">
           <img id="flyerimg" alt="Flyer preview" style="max-width:140px;max-height:180px;border-radius:8px;border:1px solid var(--line)">
@@ -971,21 +973,19 @@ async function sendPage() {
     await page.render({ canvasContext: g, viewport: vp }).promise;
     return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('render')), 'image/jpeg', .85));
   }
-  const asPicture = () => !!(flyer && flyer.image && $('#flyerconv').checked);
+  const asPicture = () => !!(flyer && flyer.image); // carrier registration: no links, so flyers always go as a picture
   const showFlyer = () => {
     const info = $('#flyerinfo'), prev = $('#flyerprev'), opt = $('#flyeropt'), dl = $('#flyerdl');
-    if (!flyer) { prev.classList.add('hidden'); info.textContent = "Any picture (including iPhone photos), a PDF, or a Word file. It's turned into a JPG picture so it shows right inside the text."; draw(); return; }
+    if (!flyer) { prev.classList.add('hidden'); info.textContent = "Any picture (including iPhone photos), a PDF, or a Word file. It's turned into a JPG picture that shows right inside the text."; draw(); return; }
     if (flyer.image) {
       const u = URL.createObjectURL(flyer.image); $('#flyerimg').src = u; dl.href = u;
       dl.download = flyer.name.replace(/\.[^.]+$/, '') + '.jpg'; prev.classList.remove('hidden');
-      opt.classList.toggle('hidden', !flyer.file); // picture-only files have nothing to choose
+      opt.classList.add('hidden');
     } else prev.classList.add('hidden');
-    const pic = asPicture();
     info.innerHTML = !flyer.image
-      ? `📎 <b>${esc(flyer.name)}</b> will be sent as a <b>link</b>. ` + (flyer.old ? 'Old Word files (.doc) can\'t be converted. Save it as .docx or PDF to send it as a picture.' : flyer.failed ? 'It couldn\'t be turned into a picture.' : '')
+      ? `⚠️ <b>${esc(flyer.name)}</b> can't be sent. ` + (flyer.old ? 'Old Word files (.doc) can\'t be turned into a picture. Save it as .docx, PDF or JPG and upload that.' : 'It couldn\'t be turned into a picture. Save it as a JPG (or take a screenshot) and upload that.')
       : flyer.kind === 'image' ? `✅ <b>${esc(flyer.name)}</b> → JPG picture text.`
-      : pic ? `✅ <b>${esc(flyer.name)}</b> → ${flyer.kind === 'pdf' ? 'first page' : 'first page'} as a JPG picture, plus a link to the full file.`
-      : `📎 <b>${esc(flyer.name)}</b> will be sent as a <b>link</b> only.`;
+      : `✅ <b>${esc(flyer.name)}</b> → first page sent as a JPG picture.`;
     draw();
   };
   $('#flyer').addEventListener('change', async e => {
@@ -1017,7 +1017,7 @@ async function sendPage() {
       if (up.error) throw new Error('Flyer upload failed: ' + up.error.message);
       media = sb.storage.from('flyers').getPublicUrl(path).data.publicUrl;
     }
-    if (flyer.file) {
+    if (false && flyer.file) {
       const ext = flyer.file.name.split('.').pop().toLowerCase(), path = `${o.id}/${stamp}-${base}.${ext}`;
       const type = ({ pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', bmp: 'image/bmp', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif' })[ext] || flyer.file.type || 'application/octet-stream';
       const up = await sb.storage.from('flyers').upload(path, flyer.file, { contentType: type, upsert: false });
@@ -1027,7 +1027,8 @@ async function sendPage() {
     return { media, link };
   }
   const draw = () => {
-    const raw0 = f.msg.value; const mode = f.mode.value; const hasName = NAME_RE.test(raw0) || FULL_RE.test(raw0); NAME_RE.lastIndex = 0; FULL_RE.lastIndex = 0;
+    const raw0 = f.msg.value; const mode = f.mode.value;
+    $('#linkwarn').style.display = mode !== 'VOICE' && (LINK_RE.test(raw0) || PHONE_RE.test(raw0)) ? '' : 'none'; const hasName = NAME_RE.test(raw0) || FULL_RE.test(raw0); NAME_RE.lastIndex = 0; FULL_RE.lastIndex = 0;
     const raw = personalize(raw0, 'Sarah Cohen');
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const msg = raw.trim();
@@ -1151,6 +1152,8 @@ async function sendPage() {
     e.preventDefault();
     if (f.mode.value === 'VOICE') return sendVoice();
     let t = f.msg.value.trim(); if (!t && !flyer) return toast('Write a message first', true);
+    if (flyer && !flyer.image) return toast('That flyer can\'t be sent. Upload it as a picture (JPG, PNG) or a PDF.', true);
+    if (LINK_RE.test(t) || PHONE_RE.test(t)) return toast('Please remove the web address or phone number. Your texting registration doesn\'t allow them in messages.', true);
     const flyerOnly = !t && !!flyer;           // nothing to say on a call: texting members only
     if (flyerOnly) t = 'Please see the attached flyer.';
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
@@ -1165,7 +1168,7 @@ async function sendPage() {
     $('#sendbtn').disabled = true;
     let up;
     try { up = await uploadFlyer(); } catch (err) { $('#sendbtn').disabled = false; return toast(err.message, true); }
-    const msgOut = up.link ? `${t}\n${up.media ? 'Full flyer' : 'Flyer'}: ${up.link}` : t;
+    const msgOut = t;
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
       p_mode: flyerOnly ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
     $('#sendbtn').disabled = false;
