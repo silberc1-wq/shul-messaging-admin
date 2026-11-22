@@ -52,6 +52,13 @@ const STATUS = {
 const pill = v => { if (v == null || v === '') return ''; const u = String(v).toUpperCase();
   const c = STATUS.ok.includes(u) ? 'ok' : STATUS.warn.includes(u) ? 'warn' : STATUS.bad.includes(u) ? 'bad' : ''; return `<span class="pill ${c}">${esc(v)}</span>`; };
 
+// recordings made by phone live at Twilio (password-protected) until they're copied to our storage
+const isTwilioRec = u => /^https:\/\/api\.twilio\.com\//.test(u || '');
+const audioLink = (u, label) => !/^https:\/\//.test(u || '') ? '' : isTwilioRec(u) ? '<span class="small muted">⏳ Saving recording…</span>'
+  : `<a class="small" href="${esc(u)}" target="_blank" rel="noopener">${label}</a>`;
+const audioPlayer = u => !/^https:\/\//.test(u || '') ? '' : isTwilioRec(u) ? '<span class="small muted">⏳ Saving recording…</span>'
+  : `<audio controls preload="none" src="${esc(u)}" style="height:34px;width:220px;max-width:100%"></audio><div><a class="small" href="${esc(u)}" target="_blank" rel="noopener" download>Download</a></div>`;
+
 // ---------- field rendering ----------
 function cell(col, row) {
   const v = row[col.f];
@@ -220,7 +227,7 @@ const VIEWS = {
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status' },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` },
       { f: 'message', label: 'Message', render: (v, r) => `<div class="small" style="min-width:160px;max-width:260px;overflow-wrap:anywhere">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>`
-          + [/^https:\/\//.test(r.audio_url || '') ? `<a class="small" href="${esc(r.audio_url)}" target="_blank" rel="noopener">▶ Play recording</a>` : '',
+          + [audioLink(r.audio_url, '▶ Play recording'),
              /^https:\/\//.test(r.media_url || '') ? `<a class="small" href="${esc(r.media_url)}" target="_blank" rel="noopener">🖼 View flyer</a>` : ''].filter(Boolean).join(' · ') },
       { f: 'audio_url', label: 'Recording', table: false }, { f: 'media_url', label: 'Flyer', table: false },
       { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: '_rep', label: 'Delivery', render: (v, r) => deliveryLine(r._rep) },
@@ -239,7 +246,7 @@ const VIEWS = {
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name', label: 'Name', edit: false }, { f: 'phone', label: 'Phone', type: 'phone', edit: false },
       { f: 'message', label: 'Message', type: 'longtext', edit: false },
-      { f: 'audio_url', label: 'Voicemail', edit: false, render: v => /^https:\/\//.test(v || '') ? `<a href="${esc(v)}" target="_blank" rel="noopener">▶ Play</a>` : '' }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
+      { f: 'audio_url', label: 'Voicemail', edit: false, render: v => audioPlayer(v) }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
       { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ],
     rowActions: r => r.status !== 'HANDLED' ? [{ label: 'Mark handled', run: async () => check(await sb.from('replies').update({ status: 'HANDLED' }).eq('id', r.id), 'Marked handled') }] : [] },

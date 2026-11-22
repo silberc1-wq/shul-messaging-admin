@@ -1,0 +1,285 @@
+{
+ "name": "CommunityConnect \u2013 Save recordings",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "save-rec-80ec3afaf872e3990291",
+    "responseMode": "onReceived",
+    "options": {}
+   },
+   "name": "Recording to save (from Supabase)",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "id": "e952ef35-ac12-43a5-8d4f-13f86e52574c",
+   "webhookId": "4a79a24e-b52c-41fc-b6d6-7ed0e95c13bc"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "60abac46-9626-4416-ac3a-48d039e816fd",
+       "leftValue": "={{ $json.body.secret === 'PUT_THE_DISPATCH_SECRET_HERE' && /^https:\\/\\/api\\.twilio\\.com\\//.test($json.body.url || '') && !!$json.body.path }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "name": "Allowed?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    220,
+    0
+   ],
+   "id": "c7f36b4a-ab0a-435f-9756-9feef6fe1da4"
+  },
+  {
+   "parameters": {
+    "assignments": {
+     "assignments": [
+      {
+       "id": "67c5a59d-09de-4acc-95dd-7733f103b6a4",
+       "name": "supabaseUrl",
+       "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
+       "type": "string"
+      },
+      {
+       "id": "42e7a439-d99e-44c9-be2a-132f1d110ef1",
+       "name": "twilioAuthToken",
+       "value": "PASTE_YOUR_TWILIO_AUTH_TOKEN_HERE",
+       "type": "string"
+      }
+     ]
+    },
+    "includeOtherFields": true,
+    "options": {}
+   },
+   "name": "Config (recordings)",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    440,
+    -100
+   ],
+   "id": "5f43ed11-8e24-46eb-a4b8-bd272a3c9fa9"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Twilio recordings need the account's login (Account SID + Auth Token).\nconst cfg = $('Config (recordings)').first().json;\nconst b = $('Recording to save (from Supabase)').first().json.body;\nconst sid = (b.url.match(/\\/Accounts\\/(AC[0-9a-fA-F]+)\\//) || [])[1] || '';\nconst url = /\\.(mp3|wav)$/i.test(b.url) ? b.url : b.url + '.mp3';\nreturn [{ json: { job: b.job, path: b.path, url,\n  auth: 'Basic ' + Buffer.from(sid + ':' + cfg.twilioAuthToken).toString('base64'),\n  publicUrl: cfg.supabaseUrl + '/storage/v1/object/public/recordings/' + b.path } }];\n"
+   },
+   "name": "Prepare",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    660,
+    -100
+   ],
+   "id": "818e936e-6d4d-42f4-a621-baae56b7bb84"
+  },
+  {
+   "parameters": {
+    "url": "={{ $json.url }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "={{ $json.auth }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "responseFormat": "file",
+       "outputPropertyName": "data"
+      }
+     }
+    }
+   },
+   "name": "Download from Twilio",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    880,
+    -100
+   ],
+   "id": "20a8b548-3587-4555-a0d9-7148f21a58c5",
+   "retryOnFail": true,
+   "maxTries": 4,
+   "waitBetweenTries": 4000
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ $('Config (recordings)').first().json.supabaseUrl }}/storage/v1/object/recordings/{{ $('Prepare').first().json.path }}",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "x-upsert",
+       "value": "true"
+      },
+      {
+       "name": "Content-Type",
+       "value": "audio/mpeg"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "binaryData",
+    "inputDataFieldName": "data",
+    "options": {}
+   },
+   "name": "Save in Supabase storage",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1100,
+    -100
+   ],
+   "id": "2c3f6c87-a076-4b94-9776-e928b57c73be",
+   "credentials": {
+    "supabaseApi": {
+     "id": "UJKemDkIPKxRY4nb",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ $('Config (recordings)').first().json.supabaseUrl }}/rest/v1/rpc/finish_recording_job",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_job: $('Prepare').first().json.job, p_url: $('Prepare').first().json.publicUrl }) }}",
+    "options": {}
+   },
+   "name": "Use the saved copy (Supabase)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1320,
+    -100
+   ],
+   "id": "4da26a3e-ec47-4cca-a923-575367b255a2",
+   "credentials": {
+    "supabaseApi": {
+     "id": "UJKemDkIPKxRY4nb",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "content": "## CommunityConnect: save recordings\n\nVoicemails and phone-recorded announcements are stored by Twilio, where opening them asks for the Twilio password. This copies each one into your Supabase storage so it plays with one click on the website.\n\n1. In **Config (recordings)** paste your Twilio Auth Token (same as the other workflows).\n2. Open **Save in Supabase storage** and **Use the saved copy** and pick your Supabase credential.\n3. Save, then **Publish**.\n\nRuns by itself for every new recording, and once for the older ones.",
+    "height": 360,
+    "width": 520,
+    "color": 5
+   },
+   "name": "Read Me",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    0,
+    -480
+   ],
+   "id": "add8e249-0d8e-40f5-a970-2cc9181ff5bb"
+  }
+ ],
+ "connections": {
+  "Recording to save (from Supabase)": {
+   "main": [
+    [
+     {
+      "node": "Allowed?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Config (recordings)": {
+   "main": [
+    [
+     {
+      "node": "Prepare",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Prepare": {
+   "main": [
+    [
+     {
+      "node": "Download from Twilio",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Download from Twilio": {
+   "main": [
+    [
+     {
+      "node": "Save in Supabase storage",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Save in Supabase storage": {
+   "main": [
+    [
+     {
+      "node": "Use the saved copy (Supabase)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Allowed?": {
+   "main": [
+    [
+     {
+      "node": "Config (recordings)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    []
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "pinData": {}
+}
