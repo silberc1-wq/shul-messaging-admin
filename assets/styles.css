@@ -350,3 +350,6 @@ table.data th { background: #f7f9fc; }
 .door-ic{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:var(--sky-soft);color:var(--sky-ink)}
 @media (max-width:640px){.door-grid{grid-template-columns:1fr}}
 button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip:hover{border-color:var(--sky-line)}
+.zrow{display:grid;grid-template-columns:1.1fr 1.6fr .6fr .8fr 1.2fr auto;gap:8px;align-items:center;margin-bottom:8px}
+.zrow.zhead{margin-bottom:4px}
+@media (max-width:640px){.zrow{grid-template-columns:1fr 1fr;padding:8px;border:1px solid var(--line);border-radius:10px}.zrow.zhead{display:none}}

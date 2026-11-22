@@ -857,9 +857,6 @@ const SETTINGS_COLS = [
   { f: 'forward_replies_extra', label: 'Also forward to these phones', hint: 'Optional. Separate several numbers with commas, e.g. 845-555-1234, 718-555-9876' },
   { f: 'forward_replies_email', label: 'Also forward to email', hint: 'Optional. Several addresses can be separated with commas.' },
   { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
-  { f: 'zmanim_zip', label: 'Zmanim location (ZIP code)', hint: 'For repeating messages with candle lighting, shkia, havdalah etc. Times come from Hebcal.com.' },
-  { f: 'candle_minutes', label: 'Candle lighting, minutes before shkia', type: 'number', hint: 'Usually 18. Some communities use 15, 20, 22 or 40.' },
-  { f: 'havdalah_minutes', label: 'Havdalah, minutes after shkia', type: 'number', hint: 'Leave empty for tzeis (8.5°). Or e.g. 42, 50 or 72.' },
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
   { f: 'detect_voicemail', label: 'Tell apart people and answering machines on calls', type: 'bool', hint: 'The delivery report then shows "Answered" vs "Voicemail". Costs about ¾ cent extra per call. If off, a call picked up by voicemail counts as answered.' },
@@ -992,10 +989,67 @@ const ZMAN_TAGS = [
     ['{mincha_gedola}', 'Mincha gedola'], ['{plag}', 'Plag'], ['{shkia}', 'Shkia'], ['{tzeis}', 'Tzeis'], ['{date}', 'Date']]],
   ['People', [['{name}', 'First name']]]];
 const fmtTime = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+const ZBASES = [['shkia', 'Shkia (that day)'], ['shkia_friday', 'Shkia Friday'], ['shkia_shabbos', 'Shkia Shabbos'], ['candles', 'Candle lighting'], ['havdalah', 'Havdalah (Shabbos ends)'],
+  ['sunrise', 'Netz (that day)'], ['sunrise_shabbos', 'Netz Shabbos'], ['alos', 'Alos (that day)'], ['shma', 'Sof zman shma (that day)'], ['shma_shabbos', 'Sof zman shma Shabbos'],
+  ['chatzos', 'Chatzos (that day)'], ['chatzos_shabbos', 'Chatzos Shabbos'], ['mincha_gedola', 'Mincha gedola (that day)'], ['mincha_gedola_shabbos', 'Mincha gedola Shabbos'],
+  ['plag', 'Plag (that day)'], ['plag_friday', 'Plag Friday'], ['plag_shabbos', 'Plag Shabbos'], ['tzeis', 'Tzeis (that day)'], ['tzeis_shabbos', 'Tzeis Shabbos'], ['tzeis72_shabbos', '72 min Shabbos']];
+const zLabel = k => (ZBASES.find(b => b[0] === k) || [k, k])[1];
+const roundText = (n, d) => !n ? 'exact' : `rounded ${d === 'down' ? 'down (earlier)' : d === 'up' ? 'up (later)' : 'to the nearest'} ${n} min`;
+async function loadOrgZ() {
+  const { data } = await sb.from('organizations').select('zmanim_zip,candle_minutes,candle_round,havdalah_minutes,havdalah_round,custom_zmanim').eq('id', S.org.id).single();
+  if (data) Object.assign(S.org, data); return S.org;
+}
+async function zmanimSettings() {
+  const o = await loadOrgZ(); let custom = JSON.parse(JSON.stringify(o.custom_zmanim || []));
+  const sel = (name, opts, v) => `<select name="${name}">${opts.map(([val, l]) => `<option value="${val}" ${String(val) === String(v ?? '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const roundOpts = [['0|nearest', 'Exact'], ['5|down', '5 min, earlier'], ['5|up', '5 min, later'], ['5|nearest', '5 min, nearest'], ['10|down', '10 min, earlier'], ['10|up', '10 min, later'], ['15|nearest', '15 min, nearest']];
+  const f = modal('Zmanim settings', `
+    <div class="grid2">
+      <div class="field"><label>Location (ZIP code)</label><input name="zip" maxlength="10" value="${esc(o.zmanim_zip || '')}" placeholder="10952"><div class="hint">Times come from Hebcal.com for this ZIP.</div></div>
+      <div></div>
+      <div class="field"><label>Candle lighting: minutes before shkia</label>${sel('cmin', [[15, '15 min'], [18, '18 min (most common)'], [20, '20 min'], [22, '22 min'], [24, '24 min'], [30, '30 min'], [40, '40 min (Jerusalem)']].concat([15, 18, 20, 22, 24, 30, 40].includes(o.candle_minutes) ? [] : [[o.candle_minutes, o.candle_minutes + ' min']]), o.candle_minutes)}</div>
+      <div class="field"><label>Candle lighting rounding</label>${sel('cround', [[0, 'Exact'], [5, 'Round down to 5 min (earlier)'], [10, 'Round down to 10 min']], o.candle_round)}<div class="hint">Before Shabbos always rounds earlier, never later.</div></div>
+      <div class="field"><label>Shabbos ends (havdalah)</label>${sel('hmin', [['', 'Tzeis (8.5°)'], [40, '40 min after shkia'], [42, '42 min'], [45, '45 min'], [50, '50 min'], [60, '60 min'], [72, '72 min (Rabbeinu Tam)']].concat(o.havdalah_minutes && ![40, 42, 45, 50, 60, 72].includes(o.havdalah_minutes) ? [[o.havdalah_minutes, o.havdalah_minutes + ' min']] : []), o.havdalah_minutes ?? '')}</div>
+      <div class="field"><label>Havdalah rounding</label>${sel('hround', [[0, 'Exact'], [5, 'Round up to 5 min (later)'], [10, 'Round up to 10 min']], o.havdalah_round)}<div class="hint">After Shabbos always rounds later, never earlier.</div></div>
+    </div>
+    <h4 style="margin:10px 0 4px">Your own times</h4>
+    <p class="muted small" style="margin:0 0 8px">For example: <b>Mincha</b> = 15 min before shkia Friday, rounded down to 5. <b>Shiur</b> = 1 hour before shkia, nearest 5. Then use them in messages as {mincha}, {shiur}.</p>
+    <div id="zcustom"></div>
+    <button type="button" class="btn secondary sm" id="zadd">+ Add a time</button>
+    <div id="zprev" class="small muted" style="margin-top:12px"></div>`, { wide: true, onSave: async form => {
+      readRows();
+      const [cr] = [form.cround.value];
+      const res = await sb.rpc('save_zmanim_settings', { p_org: S.org.id, p_zip: form.zip.value, p_candle_minutes: +form.cmin.value, p_candle_round: +cr,
+        p_havdalah_minutes: form.hmin.value === '' ? null : +form.hmin.value, p_havdalah_round: +form.hround.value, p_custom: custom });
+      if (res.error) { toast(friendlyError(res.error), true); return false; }
+      toast('Zmanim settings saved. New times load within a minute.'); await loadOrgZ(); if (S.view === 'repeating') repeatingPage(); return true;
+    } });
+  const rowHtml = (c, i) => `<div class="zrow" data-i="${i}">
+      <input data-k="label" placeholder="Name, e.g. Mincha" value="${esc(c.label || '')}">
+      <select data-k="base">${ZBASES.map(([k, l]) => `<option value="${k}" ${k === c.base ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      <input data-k="mins" type="number" min="0" max="720" value="${Math.abs(c.offset || 0)}" title="Minutes">
+      <select data-k="side"><option value="-" ${(c.offset || 0) < 0 ? 'selected' : ''}>before</option><option value="+" ${(c.offset || 0) >= 0 ? 'selected' : ''}>after</option></select>
+      <select data-k="round">${roundOpts.map(([v, l]) => `<option value="${v}" ${v === `${c.round || 0}|${c.dir || 'nearest'}` ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      <button type="button" class="btn ghost sm" data-rm title="Remove">✕</button></div>`;
+  const draw = () => { $('#zcustom').innerHTML = custom.length ? `<div class="small muted zrow zhead"><span>Name</span><span>Based on</span><span>Minutes</span><span></span><span>Rounding</span><span></span></div>` + custom.map(rowHtml).join('') : '<div class="small muted" style="margin-bottom:8px">None yet.</div>'; };
+  const readRows = () => {
+    custom = $$('#zcustom .zrow').map(r => { const g = k => $(`[data-k="${k}"]`, r).value; const [n, d] = g('round').split('|');
+      const label = g('label').trim(); return { label, key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), base: g('base'),
+        offset: (g('side') === '-' ? -1 : 1) * Math.abs(parseInt(g('mins') || '0', 10)), round: +n, dir: d }; }).filter(c => c.label);
+  };
+  draw();
+  $('#zadd').addEventListener('click', () => { readRows(); custom.push({ label: '', base: 'shkia_friday', offset: -15, round: 5, dir: 'down' }); draw(); $$('#zcustom .zrow input[data-k=label]').pop().focus(); });
+  $('#zcustom').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; readRows(); custom.splice(+b.closest('.zrow').dataset.i, 1); draw(); });
+}
 async function repeatingPage() {
-  const o = S.org, main = $('#main');
+  const o = await loadOrgZ(), main = $('#main');
   main.innerHTML = head('Repeating messages', 'Messages that go out by themselves every week, like Shabbos zmanim. Times such as candle lighting are filled in fresh each week.',
-    S.perms.send ? '<button class="btn" id="newrep">+ New repeating message</button>' : '') + '<div id="reps"><div class="card panel empty">Loading…</div></div>';
+    S.perms.send ? '<button class="btn" id="newrep">+ New repeating message</button>' : '') + `<div class="card panel" style="margin-bottom:14px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
+      <div class="small"><b>Zmanim:</b> ${o.zmanim_zip ? esc(o.zmanim_zip) : '<span style="color:var(--bad)">no location set</span>'} · candles ${o.candle_minutes} min before shkia${o.candle_round ? ', rounded down to ' + o.candle_round : ''}
+        · Shabbos ends ${o.havdalah_minutes ? o.havdalah_minutes + ' min after shkia' : 'at tzeis'}${o.havdalah_round ? ', rounded up to ' + o.havdalah_round : ''}
+        ${(o.custom_zmanim || []).length ? `<br>Your times: ${o.custom_zmanim.map(c => `<span class="chip">{${esc(c.key)}}</span> ${esc(c.label)} = ${Math.abs(c.offset)} min ${c.offset < 0 ? 'before' : 'after'} ${esc(zLabel(c.base))}, ${esc(roundText(c.round, c.dir))}`).join(' · ')}` : ''}</div>
+      ${S.perms.settings ? '<button class="btn secondary sm" id="zset">⚙ Zmanim settings</button>' : ''}</div><div id="reps"><div class="card panel empty">Loading…</div></div>`;
+  $('#zset')?.addEventListener('click', zmanimSettings);
   const { data, error } = await sb.from('recurring_messages').select('*').eq('org_id', o.id).is('deleted_at', null).order('created_at');
   if (error) { $('#reps').innerHTML = `<div class="card panel empty">${esc(error.message)}</div>`; return; }
   $('#newrep')?.addEventListener('click', () => repeatingForm(null));
@@ -1003,7 +1057,7 @@ async function repeatingPage() {
     $('#reps').innerHTML = `<div class="card panel"><h3 style="margin-top:0">No repeating messages yet</h3>
       <p>For example, every <b>Friday at 10:00 AM</b> to <b>ALL</b>:</p>
       <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:440px">Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nSof zman Shma {shma_shabbos}\nShabbos ends {havdalah}</div>
-      <p class="muted small">The times in { } are filled in for that week. {shkia_friday-10} means 10 minutes before shkia.${o.zmanim_zip ? '' : ' First set your <b>Zmanim location (ZIP code)</b> in <a href="#settings">Settings</a>.'}</p>
+      <p class="muted small">The times in { } are filled in for that week. {shkia_friday-10} means 10 minutes before shkia.${o.zmanim_zip ? '' : ' First set your location under <b>⚙ Zmanim settings</b> above.'}</p>
       ${S.perms.send ? '<button class="btn" id="newrep2">Create one now</button>' : ''}</div>`;
     $('#newrep2')?.addEventListener('click', () => repeatingForm(null, true));
     return;
@@ -1048,7 +1102,7 @@ async function repeatingForm(r, example = false) {
       <div class="field"><label>How</label><select name="mode"><option value="PREF">By each member's preference</option><option value="TEXT">Text only</option><option value="CALL">Phone call only</option></select></div>
       <div class="field" style="grid-column:1/-1"><label>Message</label><textarea name="msg" rows="6" maxlength="1600">${esc(v.message)}</textarea>
         <div class="hint">Click to add a time. Add -10 or +5 inside the braces for minutes before/after, e.g. {shkia_friday-10}.</div>
-        <div id="ztags" style="margin-top:6px">${ZMAN_TAGS.map(([h, tags]) => `<div class="small" style="margin:6px 0 2px"><b>${h}</b></div>${tags.map(([t, l]) => `<button type="button" class="chip" data-tag="${t}" style="cursor:pointer;margin:0 4px 4px 0">${esc(l)}</button>`).join('')}`).join('')}</div></div>
+        <div id="ztags" style="margin-top:6px">${(o.custom_zmanim || []).length ? `<div class="small" style="margin:6px 0 2px"><b>Your times</b></div>${o.custom_zmanim.map(c => `<button type="button" class="chip" data-tag="{${esc(c.key)}}" style="cursor:pointer;margin:0 4px 4px 0">${esc(c.label)}</button>`).join('')}` : ''}${ZMAN_TAGS.map(([h, tags]) => `<div class="small" style="margin:6px 0 2px"><b>${h}</b></div>${tags.map(([t, l]) => `<button type="button" class="chip" data-tag="${t}" style="cursor:pointer;margin:0 4px 4px 0">${esc(l)}</button>`).join('')}`).join('')}</div></div>
       <div class="field" style="grid-column:1/-1"><label>This week it would read</label><div id="rprev" class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;min-height:60px">…</div></div>
     </div>`, { wide: true, saveText: r ? 'Save' : 'Create', onSave: async form => {
       const days = $$('#rdays input:checked').map(i => +i.value);
@@ -1064,7 +1118,7 @@ async function repeatingForm(r, example = false) {
     const box = $('#rprev'); if (!box) return;
     if (error) { box.textContent = error.message; return; }
     let note = '';
-    if (!pv.zip) note = '<div style="color:var(--bad)">Set your Zmanim location (ZIP code) in Settings to fill in the times.</div>';
+    if (!pv.zip) note = '<div style="color:var(--bad)">Set your location under ⚙ Zmanim settings to fill in the times.</div>';
     else if (pv.missing.length) note = `<div style="color:var(--warn)">${pv.loaded ? 'Unknown: ' + esc(pv.missing.map(m => '{' + m + '}').join(' ')) : 'Loading times for ' + esc(pv.zip) + '… this takes a minute.'}</div>`;
     box.innerHTML = esc(pv.message) + note;
     if (pv.zip && !pv.loaded) { clearTimeout(t); t = setTimeout(prev, 20000); }
