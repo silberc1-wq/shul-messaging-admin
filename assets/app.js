@@ -18,6 +18,8 @@ const fmtPhone = p => { const d = String(p || '').replace(/\D/g, ''); const t = 
   return t.length === 10 ? `(${t.slice(0, 3)}) ${t.slice(3, 6)}-${t.slice(6)}` : (p || ''); };
 const fmtDT = v => v ? new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
 const fmtD = v => v ? new Date(v + (String(v).length === 10 ? 'T12:00:00' : '')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+// Jewish features (Hebrew dates, Hebrew calendar, zmanim) are turned on per organization by the platform owner
+const JEW = () => !!S.org?.jewish_features;
 // ---------- Hebrew dates (built into the browser: no internet lookup) ----------
 const HEB_PREF = () => { try { return localStorage.getItem('cc_hebdates') || 'en'; } catch { return 'en'; } };
 let _hfEn;
@@ -48,7 +50,7 @@ function hebDay(d, style) { const n = hebParts(d).day; return style === 'he' ? g
 const dayUTC = (y, m, dd) => new Date(Date.UTC(y, m, dd, 12));
 const asDayUTC = v => { if (!v) return null; const s = String(v); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, d] = s.split('-').map(Number); return dayUTC(y, m - 1, d); }
   const x = new Date(v); return isNaN(x) ? null : dayUTC(x.getFullYear(), x.getMonth(), x.getDate()); };
-const hebLine = v => { const t = hebDate(asDayUTC(v)); return t ? `<div class="hebd" ${HEB_PREF() === 'he' ? 'dir="rtl"' : ''}>${esc(t)}</div>` : ''; };
+const hebLine = v => { if (!JEW()) return ''; const t = hebDate(asDayUTC(v)); return t ? `<div class="hebd" ${HEB_PREF() === 'he' ? 'dir="rtl"' : ''}>${esc(t)}</div>` : ''; };
 const money = n => n == null || n === '' ? '' : '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const num = n => n == null ? '' : Number(n).toLocaleString();
 document.querySelectorAll('[data-brand]').forEach(el => (el.textContent = cfg.brandName));
@@ -341,6 +343,7 @@ const VIEWS = {
       { f: 'paid_until', label: 'Paid until', type: 'date' }, { f: 'monthly_fee', label: 'Monthly fee', type: 'money' }, { f: 'setup_fee', label: 'Setup fee', type: 'money', table: false },
       { f: 'contact_limit', label: 'Contact limit', type: 'number', table: false, hint: 'Leave empty for unlimited contacts.' }, { f: 'notification_limit', label: 'Monthly credits', type: 'number', table: false },
       { f: 'voice_minute_limit', label: 'Voice minutes', type: 'number', table: false },
+      { f: 'jewish_features', label: 'Jewish features', type: 'bool', table: false, hint: 'Hebrew dates and Hebrew calendar, Shabbos times and zmanim in repeating messages, Jewish examples. Off for non-Jewish customers.' },
       { f: 'contact_person', label: 'Contact person', table: false }, { f: 'contact_phone', label: 'Contact phone', type: 'phone', table: false },
       { f: 'contact_email', label: 'Contact email', type: 'email' }, { f: 'go_live_date', label: 'Go-live', type: 'date', table: false },
       { f: 'billing_day', label: 'Billing day', table: false }, { f: 'active', label: 'Active', type: 'bool', table: false },
@@ -844,7 +847,7 @@ async function overviewPage() {
       <div><span class="ov-num">1</span><b>From this website</b>
         <p>Click <a href="#send">Send an announcement</a>, pick a group, and write your message. You'll see exactly how many people get it before you press send.</p></div>
       <div><span class="ov-num">2</span><b>By texting from your phone</b>
-        <p>Text <b>${phone}</b> something like <i>SEND MEN Mincha at 6:45</i>. You'll get a text back asking you to reply <b>YES</b> to send it.</p>
+        <p>Text <b>${phone}</b> something like <i>${JEW() ? 'SEND MEN Mincha at 6:45' : 'SEND ALL Meeting tonight at 7 PM'}</i>. You'll get a text back asking you to reply <b>YES</b> to send it.</p>
         <details class="ov-more"><summary>Show all text commands</summary>
           <ul>
             <li><b>SEND</b> group message: each person gets it the way they prefer (text or call)</li>
@@ -1074,21 +1077,23 @@ async function zmanimSettings() {
 }
 async function repeatingPage() {
   const o = await loadOrgZ(), main = $('#main');
-  main.innerHTML = head('Repeating messages', 'Messages that go out by themselves every week, like Shabbos zmanim. Times such as candle lighting are filled in fresh each week.',
-    S.perms.send ? '<button class="btn" id="newrep">+ New repeating message</button>' : '') + `<div class="card panel" style="margin-bottom:14px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
+  main.innerHTML = head('Repeating messages', JEW() ? 'Messages that go out by themselves every week, like Shabbos zmanim. Times such as candle lighting are filled in fresh each week.' : 'Messages that go out by themselves on the days and time you choose, like a weekly reminder.',
+    S.perms.send ? '<button class="btn" id="newrep">+ New repeating message</button>' : '') + (!JEW() ? '<div id="reps"><div class="card panel empty">Loading…</div></div>' : `<div class="card panel" style="margin-bottom:14px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
       <div class="small"><b>Zmanim:</b> ${o.zmanim_zip ? esc(o.zmanim_zip) : '<span style="color:var(--bad)">no location set</span>'} · candles ${o.candle_minutes} min before shkia${o.candle_round ? ', rounded down to ' + o.candle_round : ''}
         · Shabbos ends ${o.havdalah_minutes ? o.havdalah_minutes + ' min after shkia' : 'at tzeis'}${o.havdalah_round ? ', rounded up to ' + o.havdalah_round : ''}
         ${(o.custom_zmanim || []).length ? `<br>Your times: ${o.custom_zmanim.map(c => `<span class="chip">{${esc(c.key)}}</span> ${esc(c.label)} = ${Math.abs(c.offset)} min ${c.offset < 0 ? 'before' : 'after'} ${esc(zLabel(c.base))}, ${esc(roundText(c.round, c.dir))}`).join(' · ')}` : ''}</div>
-      ${S.perms.settings ? '<button class="btn secondary sm" id="zset">⚙ Zmanim settings</button>' : ''}</div><div id="reps"><div class="card panel empty">Loading…</div></div>`;
+      ${S.perms.settings ? '<button class="btn secondary sm" id="zset">⚙ Zmanim settings</button>' : ''}</div><div id="reps"><div class="card panel empty">Loading…</div></div>`);
   $('#zset')?.addEventListener('click', zmanimSettings);
   const { data, error } = await sb.from('recurring_messages').select('*').eq('org_id', o.id).is('deleted_at', null).order('created_at');
   if (error) { $('#reps').innerHTML = `<div class="card panel empty">${esc(error.message)}</div>`; return; }
   $('#newrep')?.addEventListener('click', () => repeatingForm(null));
   if (!data.length) {
     $('#reps').innerHTML = `<div class="card panel"><h3 style="margin-top:0">No repeating messages yet</h3>
-      <p>For example, every <b>Friday at 10:00 AM</b> to <b>ALL</b>:</p>
+      ${JEW() ? `<p>For example, every <b>Friday at 10:00 AM</b> to <b>ALL</b>:</p>
       <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:440px">Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nSof zman Shma {shma_shabbos}\nShabbos ends {havdalah}</div>
-      <p class="muted small">The times in { } are filled in for that week. {shkia_friday-10} means 10 minutes before shkia.${o.zmanim_zip ? '' : ' First set your location under <b>⚙ Zmanim settings</b> above.'}</p>
+      <p class="muted small">The times in { } are filled in for that week. {shkia_friday-10} means 10 minutes before shkia.${o.zmanim_zip ? '' : ' First set your location under <b>⚙ Zmanim settings</b> above.'}</p>`
+      : `<p>For example, every <b>Monday at 9:00 AM</b> to <b>VOLUNTEERS</b>:</p>
+      <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:440px">Hi {name}, a reminder that volunteer shifts for this week are posted. Reply with any questions.</div>`}
       ${S.perms.send ? '<button class="btn" id="newrep2">Create one now</button>' : ''}</div>`;
     $('#newrep2')?.addEventListener('click', () => repeatingForm(null, true));
     return;
@@ -1122,18 +1127,19 @@ async function repeatingForm(r, example = false) {
   const { data: groups } = await sb.rpc('my_send_groups', { p_org: o.id });
   const { data: glist } = await sb.from('groups').select('code,number,name').eq('org_id', o.id).eq('active', true).is('deleted_at', null).order('number');
   const allowed = (groups || []).includes('ALL') ? ['ALL', ...(glist || []).map(g => g.code).filter(c => c !== 'ALL')] : (groups || []);
-  const v = r || { name: example ? 'Shabbos zmanim' : '', group_name: 'ALL', mode: 'PREF', weekdays: [5], send_time: '10:00', active: true,
-    message: example ? 'Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nSof zman Shma {shma_shabbos}\nShabbos ends {havdalah}\nGood Shabbos!' : '' };
+  const ex = example && JEW();
+  const v = r || { name: ex ? 'Shabbos zmanim' : '', group_name: 'ALL', mode: 'PREF', weekdays: [JEW() ? 5 : 1], send_time: JEW() ? '10:00' : '09:00', active: true,
+    message: ex ? 'Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nSof zman Shma {shma_shabbos}\nShabbos ends {havdalah}\nGood Shabbos!' : '' };
   const f = modal(r ? 'Edit repeating message' : 'New repeating message', `
     <div class="grid2">
-      <div class="field"><label>Name (for you)</label><input name="name" maxlength="80" value="${esc(v.name)}" placeholder="Shabbos zmanim"></div>
+      <div class="field"><label>Name (for you)</label><input name="name" maxlength="80" value="${esc(v.name)}" placeholder="${JEW() ? 'Shabbos zmanim' : 'Weekly reminder'}"></div>
       <div class="field"><label>Send to group</label><select name="group">${allowed.map(g => `<option ${g === v.group_name ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>
       <div class="field" style="grid-column:1/-1"><label>Days</label><div class="groups-pick" id="rdays">${DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${v.weekdays.includes(i) ? 'checked' : ''}> ${d}</label>`).join('')}</div></div>
       <div class="field"><label>Time</label><input name="time" type="time" value="${esc((v.send_time || '10:00').slice(0, 5))}"></div>
       <div class="field"><label>How</label><select name="mode"><option value="PREF">By each member's preference</option><option value="TEXT">Text only</option><option value="CALL">Phone call only</option></select></div>
       <div class="field" style="grid-column:1/-1"><label>Message</label><textarea name="msg" rows="6" maxlength="1600">${esc(v.message)}</textarea>
-        <div class="hint">Click to add a time. Add -10 or +5 inside the braces for minutes before/after, e.g. {shkia_friday-10}.</div>
-        <div id="ztags" style="margin-top:6px">${(o.custom_zmanim || []).length ? `<div class="small" style="margin:6px 0 2px"><b>Your times</b></div>${o.custom_zmanim.map(c => `<button type="button" class="chip" data-tag="{${esc(c.key)}}" style="cursor:pointer;margin:0 4px 4px 0">${esc(c.label)}</button>`).join('')}` : ''}${ZMAN_TAGS.map(([h, tags]) => `<div class="small" style="margin:6px 0 2px"><b>${h}</b></div>${tags.map(([t, l]) => `<button type="button" class="chip" data-tag="${t}" style="cursor:pointer;margin:0 4px 4px 0">${esc(l)}</button>`).join('')}`).join('')}</div></div>
+        <div class="hint">${JEW() ? 'Click to add a time. Add -10 or +5 inside the braces for minutes before/after, e.g. {shkia_friday-10}.' : 'Click to add each person\'s first name.'}</div>
+        <div id="ztags" style="margin-top:6px">${!JEW() ? '<button type="button" class="chip" data-tag="{name}" style="cursor:pointer">First name</button>' : (o.custom_zmanim || []).length ? `<div class="small" style="margin:6px 0 2px"><b>Your times</b></div>${o.custom_zmanim.map(c => `<button type="button" class="chip" data-tag="{${esc(c.key)}}" style="cursor:pointer;margin:0 4px 4px 0">${esc(c.label)}</button>`).join('')}` : ''}${!JEW() ? '' : ZMAN_TAGS.map(([h, tags]) => `<div class="small" style="margin:6px 0 2px"><b>${h}</b></div>${tags.map(([t, l]) => `<button type="button" class="chip" data-tag="${t}" style="cursor:pointer;margin:0 4px 4px 0">${esc(l)}</button>`).join('')}`).join('')}</div></div>
       <div class="field" style="grid-column:1/-1"><label>This week it would read</label><div id="rprev" class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;min-height:60px">…</div></div>
     </div>`, { wide: true, saveText: r ? 'Save' : 'Create', onSave: async form => {
       const days = $$('#rdays input:checked').map(i => +i.value);
@@ -1149,7 +1155,8 @@ async function repeatingForm(r, example = false) {
     const box = $('#rprev'); if (!box) return;
     if (error) { box.textContent = error.message; return; }
     let note = '';
-    if (!pv.zip) note = '<div style="color:var(--bad)">Set your location under ⚙ Zmanim settings to fill in the times.</div>';
+    if (!JEW()) note = '';
+    else if (!pv.zip) note = '<div style="color:var(--bad)">Set your location under ⚙ Zmanim settings to fill in the times.</div>';
     else if (pv.missing.length) note = `<div style="color:var(--warn)">${pv.loaded ? 'Unknown: ' + esc(pv.missing.map(m => '{' + m + '}').join(' ')) : 'Loading times for ' + esc(pv.zip) + '… this takes a minute.'}</div>`;
     box.innerHTML = esc(pv.message) + note;
     if (pv.zip && !pv.loaded) { clearTimeout(t); t = setTimeout(prev, 20000); }
@@ -1175,7 +1182,7 @@ async function pollsPage() {
   if (error) { $('#polls').innerHTML = `<div class="card panel empty">${esc(error.message)}</div>`; return; }
   if (!polls.length) { $('#polls').innerHTML = `<div class="card panel"><h3 style="margin-top:0">No polls yet</h3>
     <p>On the <a href="#send">Send Message</a> page, check <b>📊 Add a poll</b>, type your question and the answers. Members get:</p>
-    <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:420px">Kiddush this week, which day works?\nReply 1 for Friday night\nReply 2 for Shabbos morning</div>
+    <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:420px">${JEW() ? 'Kiddush this week, which day works?\nReply 1 for Friday night\nReply 2 for Shabbos morning' : 'Picnic this week, which day works?\nReply 1 for Saturday\nReply 2 for Sunday'}</div>
     <p class="muted small">If someone replies again, their answer is changed. Polls close after the number of days you choose.</p></div>`; return; }
   const byPoll = {}; (votes || []).forEach(v => (byPoll[v.poll_id] = byPoll[v.poll_id] || []).push(v));
   const open = p => new Date(p.closes_at) > new Date();
@@ -1239,7 +1246,7 @@ async function sendPage() {
         <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
         <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
       </div>
-      <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="Mincha today is at 6:45 PM."></textarea>
+      <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="${JEW() ? 'Mincha today is at 6:45 PM.' : 'Meeting tonight at 7 PM.'}"></textarea>
         <div class="hint" id="namehint">Tip: type <b>{name}</b> to greet each person by their first name, e.g. "Dear {name}, …"</div>
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div>
         <div id="linkwarn" class="small" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad)">⚠️ Your message has a web address or phone number. Your texting registration doesn't allow these, so carriers may block it. Please remove it.</div></div>
@@ -1417,7 +1424,7 @@ async function sendPage() {
     const voice = mode === 'VOICE';
     $('#voicebox').classList.toggle('hidden', !voice);
     $('#msglabel').textContent = voice ? 'Short description (for History, optional)' : 'Message';
-    f.msg.rows = voice ? 2 : 6; f.msg.placeholder = voice ? 'e.g. Shabbos schedule announcement' : 'Mincha today is at 6:45 PM.';
+    f.msg.rows = voice ? 2 : 6; f.msg.placeholder = voice ? (JEW() ? 'e.g. Shabbos schedule announcement' : 'e.g. Weekly schedule announcement') : (JEW() ? 'Mincha today is at 6:45 PM.' : 'Meeting tonight at 7 PM.');
     $('#calc').classList.toggle('hidden', voice); $('#badchars').style.display = voice ? 'none' : $('#badchars').style.display;
     $('#calch').textContent = voice ? 'Voice recording' : 'Message calculator';
     $('#segnote').classList.toggle('hidden', voice); $('#flyerbox').classList.toggle('hidden', voice); $('#pollbox').classList.toggle('hidden', voice); $('#namehint').classList.toggle('hidden', voice);
@@ -1614,6 +1621,7 @@ async function render() {
   const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
+  $$('[data-hebpref]').forEach(b => b.classList.toggle('hidden', !JEW()));
   if (!S.org && !VIEWS[S.view]?.platform) {
     $('#main').innerHTML = S.isPlatform ? head('Welcome', 'No organization yet. Create one under All Organizations.')
       : head('Welcome', '') + `<div class="card panel" style="max-width:620px"><h3 style="margin-top:0">Your account isn't connected to an organization yet</h3>
@@ -1754,7 +1762,7 @@ function setInputDay(inp, d) {
   inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
 }
 function enhanceDateInput(inp) {
-  if (inp.dataset.heb) return; inp.dataset.heb = '1';
+  if (inp.dataset.heb || !JEW()) return; inp.dataset.heb = '1';
   const wrap = document.createElement('div'); wrap.className = 'dpwrap';
   inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
   const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn secondary sm dpbtn'; btn.title = 'Calendar (with Hebrew dates)'; btn.textContent = '📅';
