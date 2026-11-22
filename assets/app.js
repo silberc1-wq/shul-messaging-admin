@@ -18,6 +18,37 @@ const fmtPhone = p => { const d = String(p || '').replace(/\D/g, ''); const t = 
   return t.length === 10 ? `(${t.slice(0, 3)}) ${t.slice(3, 6)}-${t.slice(6)}` : (p || ''); };
 const fmtDT = v => v ? new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
 const fmtD = v => v ? new Date(v + (String(v).length === 10 ? 'T12:00:00' : '')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+// ---------- Hebrew dates (built into the browser: no internet lookup) ----------
+const HEB_PREF = () => { try { return localStorage.getItem('cc_hebdates') || 'en'; } catch { return 'en'; } };
+let _hfEn;
+const HEB_MONTHS = { Tishri: 'תשרי', Heshvan: 'חשון', Kislev: 'כסלו', Tevet: 'טבת', Shevat: 'שבט', Adar: 'אדר', 'Adar I': 'אדר א׳', 'Adar II': 'אדר ב׳',
+  Nisan: 'ניסן', Iyar: 'אייר', Sivan: 'סיון', Tamuz: 'תמוז', Av: 'אב', Elul: 'אלול' };
+function gematria(n) { // 12 → י״ב, 787 → תשפ״ז
+  n = n % 1000; let out = '';
+  const H = [[400, 'ת'], [300, 'ש'], [200, 'ר'], [100, 'ק']], T = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'], U = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
+  for (const [v, l] of H) while (n >= v) { out += l; n -= v; }
+  if (n === 15) out += 'טו'; else if (n === 16) out += 'טז'; else { out += T[Math.floor(n / 10)] + U[n % 10]; }
+  return out.length > 1 ? out.slice(0, -1) + '״' + out.slice(-1) : out + '׳';
+}
+function hebParts(d) {
+  _hfEn ||= new Intl.DateTimeFormat('en-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const p = Object.fromEntries(_hfEn.formatToParts(d).map(x => [x.type, x.value]));
+  return { day: +p.day, month: p.month, year: +String(p.year || p.relatedYear || '').replace(/\D/g, '') };
+}
+function hebDate(d, style = HEB_PREF(), withYear = true) {
+  if (!d || style === 'off') return '';
+  try {
+    const h = hebParts(d);
+    if (style === 'he') return `${gematria(h.day)} ${HEB_MONTHS[h.month] || h.month}${withYear ? ' ' + gematria(h.year) : ''}`;
+    return `${h.day} ${h.month}${withYear ? ' ' + h.year : ''}`;
+  } catch { return ''; }
+}
+function hebDay(d, style) { const n = hebParts(d).day; return style === 'he' ? gematria(n).replace(/[׳״]/g, '') : String(n); }
+// a calendar day as a UTC-noon Date, so the Hebrew date never slips a day
+const dayUTC = (y, m, dd) => new Date(Date.UTC(y, m, dd, 12));
+const asDayUTC = v => { if (!v) return null; const s = String(v); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, d] = s.split('-').map(Number); return dayUTC(y, m - 1, d); }
+  const x = new Date(v); return isNaN(x) ? null : dayUTC(x.getFullYear(), x.getMonth(), x.getDate()); };
+const hebLine = v => { const t = hebDate(asDayUTC(v)); return t ? `<div class="hebd" ${HEB_PREF() === 'he' ? 'dir="rtl"' : ''}>${esc(t)}</div>` : ''; };
 const money = n => n == null || n === '' ? '' : '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const num = n => n == null ? '' : Number(n).toLocaleString();
 document.querySelectorAll('[data-brand]').forEach(el => (el.textContent = cfg.brandName));
@@ -67,8 +98,8 @@ function cell(col, row) {
     case 'bool': return v ? '<span class="pill ok">Yes</span>' : '<span class="pill">No</span>';
     case 'phone': return `<span class="nowrap">${esc(fmtPhone(v))}</span>`;
     case 'groups': return (v || []).map(g => `<span class="chip">${esc(g)}</span>`).join('') || '<span class="muted small">none</span>';
-    case 'datetime': return `<span class="nowrap">${esc(fmtDT(v))}</span>`;
-    case 'date': return `<span class="nowrap">${esc(fmtD(v))}</span>`;
+    case 'datetime': return `<span class="nowrap">${esc(fmtDT(v))}</span>${hebLine(v)}`;
+    case 'date': return `<span class="nowrap">${esc(fmtD(v))}</span>${hebLine(v)}`;
     case 'money': return esc(money(v));
     case 'number': return esc(num(v));
     case 'status': return pill(v);
@@ -1704,6 +1735,95 @@ function passwordModal(title = 'Set your password', intro = '') {
   } });
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-setpw]')) passwordModal(); });
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-hebpref]')) return;
+  const cur = HEB_PREF(), d = dayUTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  const f = modal('Hebrew dates', `<p style="margin-top:0">Show the Hebrew date next to dates on this website, and in the date picker:</p>
+    <div class="groups-pick" style="flex-direction:column;align-items:stretch">${[['en', 'In English letters', hebDate(d, 'en')], ['he', 'In Hebrew (עברית)', hebDate(d, 'he')], ['off', "Don't show", '']].map(([v, l, ex]) =>
+      `<label><input type="radio" name="hp" value="${v}" ${v === cur ? 'checked' : ''}> ${l}${ex ? ` <span class="muted small" ${v === 'he' ? 'dir="rtl"' : ''}>(today: ${esc(ex)})</span>` : ''}</label>`).join('')}</div>
+    <p class="muted small">This is saved for you on this computer.</p>`, { onSave: form => { try { localStorage.setItem('cc_hebdates', form.hp.value); } catch {} toast('Saved'); render(); return true; } });
+});
+
+// ---------- date picker with a Hebrew calendar ----------
+// Every <input type="date"> / <input type="datetime-local"> gets a 📅 button and the Hebrew date under it.
+const GDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+function inputDay(inp) { const v = inp.value; if (!v) return null; return asDayUTC(v.slice(0, 10)); }
+function setInputDay(inp, d) {
+  const iso = d.toISOString().slice(0, 10);
+  inp.value = inp.type === 'datetime-local' ? iso + 'T' + (inp.value.slice(11, 16) || '10:00') : iso;
+  inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function enhanceDateInput(inp) {
+  if (inp.dataset.heb) return; inp.dataset.heb = '1';
+  const wrap = document.createElement('div'); wrap.className = 'dpwrap';
+  inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn secondary sm dpbtn'; btn.title = 'Calendar (with Hebrew dates)'; btn.textContent = '📅';
+  wrap.appendChild(btn);
+  const line = document.createElement('div'); line.className = 'hebd dpline'; wrap.after(line);
+  const upd = () => { const d = inputDay(inp); const t = d ? hebDate(d) : ''; line.textContent = t; line.dir = HEB_PREF() === 'he' ? 'rtl' : 'ltr'; };
+  inp.addEventListener('input', upd); inp.addEventListener('change', upd); upd();
+  btn.addEventListener('click', () => openCalendar(inp, btn));
+}
+function openCalendar(inp, anchorEl) {
+  document.querySelector('.dpop')?.remove();
+  const style = HEB_PREF() === 'off' ? 'en' : HEB_PREF();
+  const now = new Date(), today = dayUTC(now.getFullYear(), now.getMonth(), now.getDate());
+  let sel = inputDay(inp), cur = sel || today;
+  let mode = (() => { try { return localStorage.getItem('cc_calmode') || 'greg'; } catch { return 'greg'; } })();
+  const pop = document.createElement('div'); pop.className = 'dpop';
+  document.body.appendChild(pop);
+  const place = () => { const r = anchorEl.getBoundingClientRect(); const w = 330;
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    const below = r.bottom + 6, h = pop.offsetHeight || 380;
+    pop.style.top = (below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 6) : below) + 'px'; };
+  const same = (a, b) => a && b && a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+  const addD = (d, n) => new Date(d.getTime() + n * 864e5);
+  const hebMonthStart = d => { let x = d; while (hebParts(x).day > 1) x = addD(x, -1); return x; };
+  function days() { // the days shown in the grid, plus a title
+    if (mode === 'greg') {
+      const y = cur.getUTCFullYear(), m = cur.getUTCMonth(), first = dayUTC(y, m, 1), n = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      const list = Array.from({ length: n }, (_, i) => dayUTC(y, m, i + 1));
+      const h1 = hebParts(list[0]), h2 = hebParts(list[n - 1]);
+      return { list, lead: first.getUTCDay(), title: first.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+        sub: h1.month === h2.month ? `${h1.month} ${h1.year}` : `${h1.month}${h1.year !== h2.year ? ' ' + h1.year : ''} – ${h2.month} ${h2.year}`, };
+    }
+    const start = hebMonthStart(cur), mon = hebParts(start).month, list = [];
+    for (let x = start; hebParts(x).month === mon; x = addD(x, 1)) list.push(x);
+    const g1 = list[0], g2 = list[list.length - 1];
+    const gm = d => d.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' });
+    return { list, lead: start.getUTCDay(), title: style === 'he' ? `${HEB_MONTHS[mon] || mon} ${gematria(hebParts(start).year)}` : `${mon} ${hebParts(start).year}`,
+      sub: `${gm(g1)} ${g1.getUTCDate()} – ${gm(g2)} ${g2.getUTCDate()}, ${g2.getUTCFullYear()}` };
+  }
+  function draw() {
+    const { list, lead, title, sub } = days();
+    pop.innerHTML = `<div class="dphead"><button type="button" class="btn ghost sm" data-nav="-1" aria-label="Previous month">‹</button>
+        <div class="dptitle"><b ${mode === 'heb' && style === 'he' ? 'dir="rtl"' : ''}>${esc(title)}</b><span>${esc(sub)}</span></div>
+        <button type="button" class="btn ghost sm" data-nav="1" aria-label="Next month">›</button></div>
+      <div class="dptabs"><button type="button" data-mode="greg" class="${mode === 'greg' ? 'on' : ''}">Regular calendar</button><button type="button" data-mode="heb" class="${mode === 'heb' ? 'on' : ''}">Hebrew calendar</button></div>
+      <div class="dpgrid">${GDAYS.map((d, i) => `<div class="dpdow ${i === 6 ? 'sh' : ''}">${d}</div>`).join('')}${'<div></div>'.repeat(lead)}${list.map(d => {
+        const big = mode === 'greg' ? d.getUTCDate() : hebDay(d, style), small = mode === 'greg' ? hebDay(d, style) : d.getUTCDate();
+        return `<button type="button" class="dpday ${same(d, today) ? 'today' : ''} ${same(d, sel) ? 'sel' : ''} ${d.getUTCDay() === 6 ? 'sh' : ''}" data-d="${d.toISOString().slice(0, 10)}"><b>${esc(big)}</b><small>${esc(small)}</small></button>`; }).join('')}</div>
+      <div class="dpfoot"><button type="button" class="btn ghost sm" data-today>Today</button><span class="muted small" ${style === 'he' ? 'dir="rtl"' : ''}>${esc(hebDate(sel || today))}</span><button type="button" class="btn ghost sm" data-x>Close</button></div>`;
+    place();
+  }
+  pop.addEventListener('click', e => {
+    e.stopPropagation();
+    const nav = e.target.closest('[data-nav]'), md = e.target.closest('[data-mode]'), day = e.target.closest('[data-d]');
+    if (nav) {
+      const dir = +nav.dataset.nav;
+      if (mode === 'greg') cur = dayUTC(cur.getUTCFullYear(), cur.getUTCMonth() + dir, 1);
+      else { const s = hebMonthStart(cur); cur = dir > 0 ? addD(s, 31) : addD(s, -2); cur = hebMonthStart(cur); }
+      draw();
+    } else if (md) { mode = md.dataset.mode; try { localStorage.setItem('cc_calmode', mode); } catch {} draw(); }
+    else if (day) { const [y, m, d] = day.dataset.d.split('-').map(Number); setInputDay(inp, dayUTC(y, m - 1, d)); pop.remove(); }
+    else if (e.target.closest('[data-today]')) { cur = today; sel = sel; draw(); }
+    else if (e.target.closest('[data-x]')) pop.remove();
+  });
+  setTimeout(() => document.addEventListener('mousedown', function off(e) { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', off); } }), 0);
+  draw();
+}
+new MutationObserver(() => $$('input[type=date]:not([data-heb]),input[type=datetime-local]:not([data-heb])').forEach(enhanceDateInput))
+  .observe(document.body, { childList: true, subtree: true });
 let pendingRecovery = false;
 $$('[data-signout]').forEach(b => b.addEventListener('click', async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); }));
 
