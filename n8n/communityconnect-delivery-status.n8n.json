@@ -1,0 +1,276 @@
+{
+ "name": "CommunityConnect \u2013 Delivery status",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "status-e8803d23ef86627297ca",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "name": "Twilio Status",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "id": "b7005373-c3ec-4624-8b27-c4d0a3bee70e",
+   "webhookId": "b1b91acd-06a7-45c5-a09b-4ef11dc7a3cf"
+  },
+  {
+   "parameters": {
+    "assignments": {
+     "assignments": [
+      {
+       "id": "2894703c-5702-4262-9022-4fd41eb24c7e",
+       "name": "supabaseUrl",
+       "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
+       "type": "string"
+      },
+      {
+       "id": "a15afa29-a8ce-4b00-9ef5-314d424a6946",
+       "name": "twilioAuthToken",
+       "value": "PASTE_YOUR_TWILIO_AUTH_TOKEN_HERE",
+       "type": "string"
+      },
+      {
+       "id": "d26c46a2-e8f1-42b6-9818-390482e13935",
+       "name": "statusWebhookUrl",
+       "value": "https://n8n.punchverification.com/webhook/status-e8803d23ef86627297ca",
+       "type": "string"
+      }
+     ]
+    },
+    "includeOtherFields": true,
+    "options": {}
+   },
+   "name": "Config (status)",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    220,
+    0
+   ],
+   "id": "63ab6be0-4fc1-4bec-bfd6-842a5bdcf118"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Twilio signs every request: base64(HMAC-SHA1(authToken, full URL + sorted POST params)).\n// Our callback links add \"?h=<broadcast id>\", which is part of the signed URL.\nconst cfg = $('Config (status)').first().json;\nconst b = $json.body || {};\nconst q = $json.query || {};\nlet base = cfg.statusWebhookUrl + (q.h ? '?h=' + q.h : '');\nfor (const k of Object.keys(b).sort()) base += k + b[k];\nconst h = /^[0-9a-f-]{36}$/i.test(q.h || '') ? q.h : null;\nreturn [{ json: { ...$json, historyId: h, sigBase: base, sigHeader: ($json.headers || {})['x-twilio-signature'] || '' } }];\n"
+   },
+   "name": "Build Signature Check",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ],
+   "id": "8475c32e-1d2b-494d-93ef-8254416540f7"
+  },
+  {
+   "parameters": {
+    "action": "hmac",
+    "type": "SHA1",
+    "value": "={{ $json.sigBase }}",
+    "dataPropertyName": "expected",
+    "secret": "={{ $('Config (status)').first().json.twilioAuthToken }}",
+    "encoding": "base64"
+   },
+   "name": "Twilio Signature",
+   "type": "n8n-nodes-base.crypto",
+   "typeVersion": 1,
+   "position": [
+    660,
+    0
+   ],
+   "id": "955a2fed-be8f-4301-a513-b57979ba26e4"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "e075cd66-1ddc-4657-951c-d52fba0629a0",
+       "leftValue": "={{ $json.sigHeader !== '' && $json.expected === $json.sigHeader && !!$json.historyId }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "name": "Really from Twilio?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    880,
+    0
+   ],
+   "id": "e0dc2887-c153-4c5c-98a9-91467284d1b4"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ $('Config (status)').first().json.supabaseUrl }}/rest/v1/rpc/record_delivery_status",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_history: $json.historyId, p_sid: $json.body.MessageSid || $json.body.CallSid || '', p_to: $json.body.To || null, p_status: $json.body.MessageStatus || $json.body.CallStatus || null, p_error: $json.body.ErrorCode || null, p_duration: $json.body.CallDuration ? parseInt($json.body.CallDuration, 10) : null, p_answered_by: $json.body.AnsweredBy || null }) }}",
+    "options": {}
+   },
+   "id": "baf50363-1c4f-41e7-8600-d00a3c3febf4",
+   "name": "Save Status (Supabase)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1100,
+    -100
+   ],
+   "credentials": {
+    "supabaseApi": {
+     "id": "UJKemDkIPKxRY4nb",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "respondWith": "noData",
+    "options": {
+     "responseCode": 204
+    }
+   },
+   "name": "OK",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1320,
+    -100
+   ],
+   "id": "19a2ab8b-4eb3-4d9f-ac74-743fb164db15"
+  },
+  {
+   "parameters": {
+    "respondWith": "noData",
+    "options": {
+     "responseCode": 403
+    }
+   },
+   "name": "Reject (not from Twilio)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1100,
+    120
+   ],
+   "id": "7085b928-ee7a-471e-ac8e-4f31efe1fbef"
+  },
+  {
+   "parameters": {
+    "content": "## CommunityConnect: delivery report\n\nTwilio reports back here for every text and call (delivered, failed, answered, voicemail, no answer, how long they listened). It shows on the website under **History \u2192 Report**.\n\n1. In **Config (status)** paste your Twilio Auth Token (same as the other workflows).\n2. Open **Save Status (Supabase)** and pick your Supabase credential (same as in the voice workflow).\n3. Save, then **Publish**.\n\nNothing to set in Twilio: each text/call tells Twilio this address automatically.",
+    "height": 340,
+    "width": 520,
+    "color": 5
+   },
+   "name": "Read Me",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    0,
+    -420
+   ],
+   "id": "2986af29-3b21-46a1-a73e-ca2f7d367570"
+  }
+ ],
+ "connections": {
+  "Twilio Status": {
+   "main": [
+    [
+     {
+      "node": "Config (status)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Config (status)": {
+   "main": [
+    [
+     {
+      "node": "Build Signature Check",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build Signature Check": {
+   "main": [
+    [
+     {
+      "node": "Twilio Signature",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Twilio Signature": {
+   "main": [
+    [
+     {
+      "node": "Really from Twilio?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Save Status (Supabase)": {
+   "main": [
+    [
+     {
+      "node": "OK",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Really from Twilio?": {
+   "main": [
+    [
+     {
+      "node": "Save Status (Supabase)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Reject (not from Twilio)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "pinData": {}
+}

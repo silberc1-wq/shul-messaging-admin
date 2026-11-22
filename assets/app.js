@@ -26,8 +26,14 @@ function toast(msg, isError) {
   const t = $('#toast'); t.textContent = msg; t.className = 'show' + (isError ? ' error' : '');
   clearTimeout(t._h); t._h = setTimeout(() => (t.className = ''), 4000);
 }
+function friendlyError(e) {
+  const m = e?.message || '';
+  if (e?.code === '23505' && /contacts_org_phone/.test(m)) return 'This phone number is already in your contacts. Search for it and edit that person instead.';
+  if (e?.code === '23505') return 'This is a duplicate: it already exists.';
+  return m;
+}
 function check(res, okMsg) {
-  if (res.error) { toast(res.error.message, true); throw res.error; }
+  if (res.error) { toast(friendlyError(res.error), true); throw res.error; }
   if (okMsg) toast(okMsg);
   return res.data;
 }
@@ -201,12 +207,21 @@ const VIEWS = {
     desc: 'Every announcement that went out.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status' },
-      { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext' },
-      { f: 'audio_url', label: 'Recording', render: v => /^https:\/\//.test(v || '') ? `<a href="${esc(v)}" target="_blank" rel="noopener">▶ Play</a>` : '' },
-      { f: 'media_url', label: 'Flyer', render: v => /^https:\/\//.test(v || '') ? `<a href="${esc(v)}" target="_blank" rel="noopener">🖼 View</a>` : '' },
-      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'sent_count', label: 'Texts', type: 'number' },
-      { f: 'calls_made', label: 'Calls', type: 'number' }, { f: 'failed_count', label: 'Failed', type: 'number' }, { f: 'status', label: 'Status', type: 'status' },
-    ] },
+      { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` },
+      { f: 'message', label: 'Message', render: (v, r) => `<div class="small" style="min-width:160px;max-width:260px;overflow-wrap:anywhere">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>`
+          + [/^https:\/\//.test(r.audio_url || '') ? `<a class="small" href="${esc(r.audio_url)}" target="_blank" rel="noopener">▶ Play recording</a>` : '',
+             /^https:\/\//.test(r.media_url || '') ? `<a class="small" href="${esc(r.media_url)}" target="_blank" rel="noopener">🖼 View flyer</a>` : ''].filter(Boolean).join(' · ') },
+      { f: 'audio_url', label: 'Recording', table: false }, { f: 'media_url', label: 'Flyer', table: false },
+      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: '_rep', label: 'Delivery', render: (v, r) => deliveryLine(r._rep) },
+      { f: 'sent_count', label: 'Texts', type: 'number', table: false }, { f: 'calls_made', label: 'Calls', type: 'number', table: false },
+      { f: 'failed_count', label: 'Failed', type: 'number', table: false }, { f: 'status', label: 'Status', type: 'status' },
+    ],
+    after: async rows => {
+      const ids = rows.slice(0, 300).map(r => r.id); if (!ids.length) return;
+      const { data } = await sb.rpc('delivery_summary', { p_org: S.org.id, p_ids: ids });
+      const m = Object.fromEntries((data || []).map(x => [x.history_id, x])); rows.forEach(r => { r._rep = m[r.id] || null; });
+    },
+    rowActions: r => r._rep && r._rep.tracked ? [{ label: 'Report', run: () => deliveryReport(r) }] : [] },
 
   replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'Texts members sent back, and voicemails left on the phone line. They are also forwarded to the phones and email in Settings.',
@@ -421,7 +436,7 @@ function complianceCols(platform) {
    NAV
    ============================================================ */
 const NAV_ORG = [
-  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['history'], ['replies'],
+  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['history'], ['polls', '📊', 'Polls'], ['replies'],
   ['signup_requests'], ['opt_outs'], ['inbound'], ['h', 'Organization'], ['settings', '⚙️', 'Settings'], ['registration', '🪪', 'Texting Registration'],
   ['admins'], ['numbers'], ['audit'],
 ];
@@ -666,7 +681,7 @@ function editRow(key, row) {
 }
 
 function exportCsv(key) {
-  const v = VIEWS[key]; const cols = v.cols.filter(c => !['diff', 'members'].includes(c.f));
+  const v = VIEWS[key]; const cols = v.cols.filter(c => !['diff', 'members', '_rep'].includes(c.f));
   const val = x => x == null ? '' : Array.isArray(x) ? x.join(', ') : typeof x === 'object' ? JSON.stringify(x) : String(x);
   const lines = [cols.map(c => c.label), ...T.rows.map(r => cols.map(c => val(r[c.f])))]
     .map(l => l.map(x => /^[=+\-@]/.test(x) ? "'" + x : x).map(x => `"${x.replace(/"/g, '""')}"`).join(','));
@@ -805,6 +820,7 @@ const SETTINGS_COLS = [
   { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
+  { f: 'detect_voicemail', label: 'Tell apart people and answering machines on calls', type: 'bool', hint: 'The delivery report then shows "Answered" vs "Voicemail". Costs about ¾ cent extra per call. If off, a call picked up by voicemail counts as answered.' },
   { f: 'allow_auto_signup', label: 'Add new signups automatically', type: 'bool', hint: 'Applies to text JOIN and phone signups. If off, they appear in Signup Requests for approval.' },
   { f: 'default_voice', label: 'Default voice', type: 'select', opts: ['Standard', 'Male', 'Female'] },
   { f: 'contact_person', label: 'Main contact person' }, { f: 'contact_phone', label: 'Main contact phone', type: 'phone' }, { f: 'contact_email', label: 'Main contact email', type: 'email' },
@@ -873,6 +889,99 @@ const fixSmart = t => [...t].map(c => SMART[c] ?? c).join('');
 const LINK_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|org|net|us|io|info|co|me|ly|gl)\b)/i, PHONE_RE = /(\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/;
 const NAME_RE = /\{\s*(name|first\s*name|firstname|first)\s*\}/gi, FULL_RE = /\{\s*(full\s*name|fullname)\s*\}/gi;
 const personalize = (t, name) => t.replace(FULL_RE, name || 'Friend').replace(NAME_RE, (name || '').split(' ')[0] || 'Friend');
+/* ----- delivery report ----- */
+function deliveryLine(x) {
+  if (!x || !x.tracked) return '<span class="muted small">—</span>';
+  const parts = [];
+  if (x.delivered || x.failed || x.pending) parts.push(`💬 <b>${num(x.delivered)}</b> delivered${x.failed ? ` · <span style="color:var(--bad)">${num(x.failed)} failed</span>` : ''}${x.pending ? ` · ${num(x.pending)} waiting` : ''}`);
+  const calls = x.answered + x.voicemail + x.no_answer + x.call_failed + x.call_pending;
+  if (calls) parts.push(`📞 <b>${num(x.answered)}</b> answered${x.voicemail ? ` · ${num(x.voicemail)} voicemail` : ''}${x.no_answer ? ` · ${num(x.no_answer)} no answer` : ''}${x.call_failed ? ` · <span style="color:var(--bad)">${num(x.call_failed)} failed</span>` : ''}`);
+  if (x.replies) parts.push(`↩️ ${num(x.replies)} replied`);
+  return `<div class="small" style="line-height:1.5;min-width:190px">${parts.join('<br>')}</div>`;
+}
+const RESULT_LABEL = { delivered: ['Delivered', 'ok'], failed: ['Failed', 'bad'], pending: ['Waiting', 'warn'], answered: ['Answered', 'ok'],
+  voicemail: ['Voicemail', 'warn'], no_answer: ['No answer', 'bad'] };
+const ERR_LABEL = { '30003': 'Phone off or out of service', '30004': 'Blocked by the person', '30005': 'Number does not exist', '30006': 'Landline or can\'t get texts',
+  '30007': 'Blocked by the carrier as spam', '30008': 'Unknown carrier error', '30034': 'Number not registered yet', '21610': 'Person texted STOP' };
+const secs = n => n == null ? '' : n < 60 ? `${n} sec` : `${Math.floor(n / 60)} min ${n % 60} sec`;
+async function deliveryReport(h) {
+  const { data, error } = await sb.rpc('delivery_report', { p_history: h.id });
+  if (error) { toast(error.message, true); return 'keep'; }
+  const x = h._rep || {}, rows = data || [];
+  const callsTotal = x.answered + x.voicemail + x.no_answer + x.call_failed + x.call_pending;
+  const stat = (n, label, c = '') => `<div class="rep-stat ${c}"><b>${num(n)}</b><span>${label}</span></div>`;
+  const body = `
+    <p class="muted small" style="margin:0 0 12px">${esc(fmtDT(h.created_at))} · ${esc(h.group_name || '')} · ${esc((h.message || '').slice(0, 80))}${(h.message || '').length > 80 ? '…' : ''}</p>
+    <div class="rep-stats">
+      ${x.delivered + x.failed + x.pending ? stat(x.delivered, 'texts delivered', 'ok') + (x.failed ? stat(x.failed, 'texts failed', 'bad') : '') + (x.pending ? stat(x.pending, 'waiting') : '') : ''}
+      ${callsTotal ? stat(x.answered, 'calls answered', 'ok') + (x.voicemail ? stat(x.voicemail, 'went to voicemail') : '') + (x.no_answer ? stat(x.no_answer, 'no answer', 'bad') : '') + (x.call_failed ? stat(x.call_failed, 'calls failed', 'bad') : '') : ''}
+      ${callsTotal ? stat(Math.round((x.listen_seconds || 0) / 60), 'minutes listened') : ''}
+      ${stat(x.replies, 'replied')}
+    </div>
+    <p class="small muted" style="margin:10px 0">Texts can show <b>delivered</b> to the phone. Phones don't report whether a text was opened.${callsTotal && !S.org.detect_voicemail ? ' Calls picked up by voicemail count as answered. To tell them apart, turn on answering machine detection in Settings.' : ''}</p>
+    <div class="toolbar" style="padding:0;margin:0 0 8px"><input type="search" id="repq" placeholder="Search name or number…">
+      <select id="repf"><option value="">Everyone</option>${Object.entries(RESULT_LABEL).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}<option value="replied">Replied</option></select></div>
+    <div class="table-wrap" style="max-height:50vh;overflow:auto"><table class="data"><thead><tr><th>Name</th><th>Phone</th><th>How</th><th>Result</th><th>Listened</th><th>Reply</th></tr></thead><tbody id="repbody"></tbody></table></div>`;
+  modal('Delivery report', body, { wide: true });
+  $('#repq').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  const drawRows = () => {
+    const q = ($('#repq').value || '').toLowerCase(), f = $('#repf').value;
+    const list = rows.filter(r => (!q || (r.name || '').toLowerCase().includes(q) || (r.phone || '').includes(q.replace(/\D/g, '') || '~'))
+      && (!f || (f === 'replied' ? !!r.replied : r.result === f)));
+    $('#repbody').innerHTML = list.map(r => { const [l, c] = RESULT_LABEL[r.result] || [r.result, ''];
+      const why = r.error_code ? ERR_LABEL[r.error_code] || ('Error ' + r.error_code) : '';
+      return `<tr><td>${esc(r.name || '—')}</td><td class="nowrap">${esc(fmtPhone(r.phone))}</td><td>${r.channel === 'call' ? '📞 Call' : '💬 Text'}</td>
+        <td><span class="pill ${c}">${esc(l)}</span>${why ? `<div class="small muted">${esc(why)}</div>` : ''}</td>
+        <td class="nowrap">${r.channel === 'call' && r.duration ? esc(secs(r.duration)) : ''}</td><td class="small">${esc(r.replied || '')}</td></tr>`; }).join('')
+      || '<tr><td colspan="6" class="empty">Nobody matches.</td></tr>';
+  };
+  $('#repq').addEventListener('input', drawRows); $('#repf').addEventListener('change', drawRows); drawRows();
+  return 'keep';
+}
+
+/* ----- polls ----- */
+async function pollsPage() {
+  const o = S.org, main = $('#main');
+  main.innerHTML = head('Polls', 'Ask a question by text. Members answer by replying with a number. Results update here as answers come in.',
+    S.perms.send ? '<a class="btn" href="#send" id="newpoll">+ New poll</a>' : '') + '<div id="polls"><div class="card panel empty">Loading…</div></div>';
+  $('#newpoll')?.addEventListener('click', () => { try { sessionStorage.setItem('cc_send_poll', '1'); } catch {} });
+  const [{ data: polls, error }, { data: votes }] = await Promise.all([
+    sb.from('polls').select('*').eq('org_id', o.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(50),
+    sb.from('poll_votes').select('poll_id,phone,name,choice,updated_at').eq('org_id', o.id).limit(20000)]);
+  if (error) { $('#polls').innerHTML = `<div class="card panel empty">${esc(error.message)}</div>`; return; }
+  if (!polls.length) { $('#polls').innerHTML = `<div class="card panel"><h3 style="margin-top:0">No polls yet</h3>
+    <p>On the <a href="#send">Send Message</a> page, check <b>📊 Add a poll</b>, type your question and the answers. Members get:</p>
+    <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:420px">Kiddush this week, which day works?\nReply 1 for Friday night\nReply 2 for Shabbos morning</div>
+    <p class="muted small">If someone replies again, their answer is changed. Polls close after the number of days you choose.</p></div>`; return; }
+  const byPoll = {}; (votes || []).forEach(v => (byPoll[v.poll_id] = byPoll[v.poll_id] || []).push(v));
+  const open = p => new Date(p.closes_at) > new Date();
+  $('#polls').innerHTML = polls.map(p => {
+    const vs = byPoll[p.id] || [], total = vs.length;
+    const counts = p.options.map((_, i) => vs.filter(v => v.choice === i + 1).length), max = Math.max(1, ...counts);
+    return `<div class="card panel poll" data-id="${esc(p.id)}" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div><h3 style="margin:0 0 4px">${esc(p.question)}</h3>
+          <div class="muted small">${esc(fmtDT(p.created_at))}${p.group_name ? ' · ' + esc(p.group_name) : ''} · ${open(p) ? `<span class="pill ok">Open</span> until ${esc(fmtDT(p.closes_at))}` : '<span class="pill">Closed</span>'}</div></div>
+        <div style="display:flex;gap:8px">${open(p) && S.perms.send ? '<button class="btn secondary sm" data-close>Close poll</button>' : ''}<button class="btn secondary sm" data-who>Who answered (${num(total)})</button></div></div>
+      <div class="poll-bars">${p.options.map((opt, i) => `<div class="poll-row"><div class="poll-lab"><b>${i + 1}</b> ${esc(opt)}</div>
+        <div class="poll-bar"><span style="width:${Math.round(counts[i] / max * 100)}%"></span></div>
+        <div class="poll-n"><b>${num(counts[i])}</b> <span class="muted small">${total ? Math.round(counts[i] / total * 100) : 0}%</span></div></div>`).join('')}</div>
+      <div class="muted small">${num(total)} ${total === 1 ? 'answer' : 'answers'}</div></div>`; }).join('');
+  $('#polls').onclick = async e => {
+    const card = e.target.closest('.poll'); if (!card) return; const p = polls.find(x => x.id === card.dataset.id);
+    if (e.target.closest('[data-close]')) {
+      if (!(await confirmBox('Close this poll?', 'Replies with a number will no longer be counted for it.', 'Close poll'))) return;
+      check(await sb.from('polls').update({ closes_at: new Date().toISOString() }).eq('id', p.id), 'Poll closed'); return pollsPage();
+    }
+    if (e.target.closest('[data-who]')) {
+      const vs = (byPoll[p.id] || []).sort((a, b) => a.choice - b.choice || (a.name || '').localeCompare(b.name || ''));
+      modal('Who answered', `<p style="margin-top:0"><b>${esc(p.question)}</b></p><div class="table-wrap" style="max-height:55vh;overflow:auto"><table class="data"><thead><tr><th>Name</th><th>Phone</th><th>Answer</th><th>When</th></tr></thead><tbody>
+        ${vs.map(v => `<tr><td>${esc(v.name || '—')}</td><td class="nowrap">${esc(fmtPhone(v.phone))}</td><td>${v.choice}. ${esc(p.options[v.choice - 1] || '')}</td><td class="nowrap small">${esc(fmtDT(v.updated_at))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No answers yet.</td></tr>'}
+        </tbody></table></div>`, { wide: true });
+    }
+  };
+}
+
 async function sendPage() {
   const o = S.org;
   const { data: myGroups } = await sb.rpc('my_send_groups', { p_org: o.id });
@@ -910,6 +1019,14 @@ async function sendPage() {
         <div class="hint" id="namehint">Tip: type <b>{name}</b> to greet each person by their first name, e.g. "Dear {name}, …"</div>
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div>
         <div id="linkwarn" class="small" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad)">⚠️ Your message has a web address or phone number. Your texting registration doesn't allow these, so carriers may block it. Please remove it.</div></div>
+      <div class="field" id="pollbox"><label style="display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer"><input type="checkbox" id="pollon"> 📊 Add a poll (members answer by replying with a number)</label>
+        <div id="pollopts" class="hidden" style="margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--cream)">
+          <div class="hint" style="margin:0 0 8px">Type your question in the message box above, then the answers here.</div>
+          <div id="pollanswers"></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+            <button type="button" class="btn secondary sm" id="polladd">+ Add answer</button>
+            <label class="small" style="display:flex;gap:6px;align-items:center">Open for <select id="polldays"><option value="1">1 day</option><option value="3" selected>3 days</option><option value="7">1 week</option><option value="14">2 weeks</option></select></label></div>
+          <div class="hint" style="margin-top:8px">Polls go out as texts only, since people answer by text.</div></div></div>
       <div id="badchars" class="small" style="display:none;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn)"></div>
       <div class="field" id="flyerbox"><label>Flyer (optional)</label>
         <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
@@ -935,6 +1052,19 @@ async function sendPage() {
     </div>
   </div>`;
   const f = $('#sendf'); let reach = null;
+  // ---- poll: answers appended as "Reply 1 for …" ----
+  const pollOn = () => f.mode.value !== 'VOICE' && $('#pollon').checked;
+  const pollOpts = () => $$('#pollanswers input').map(i => i.value.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const withPoll = t => pollOn() && pollOpts().length ? (t.trim() + '\n' + pollOpts().map((x, i) => `Reply ${i + 1} for ${x}`).join('\n')) : t;
+  const pollRow = (v = '') => { const n = $$('#pollanswers input').length + 1; if (n > 5) return;
+    const d = document.createElement('div'); d.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+    d.innerHTML = `<b style="width:18px">${n}</b><input type="text" maxlength="40" placeholder="Answer ${n}" value="${esc(v)}" style="flex:1">`;
+    $('#pollanswers').appendChild(d); d.querySelector('input').addEventListener('input', () => draw());
+    $('#polladd').classList.toggle('hidden', n >= 5); };
+  pollRow(); pollRow();
+  $('#polladd').addEventListener('click', () => { pollRow(); $$('#pollanswers input').pop().focus(); });
+  $('#pollon').addEventListener('change', () => { $('#pollopts').classList.toggle('hidden', !$('#pollon').checked); loadReach(); });
+  try { if (sessionStorage.getItem('cc_send_poll')) { sessionStorage.removeItem('cc_send_poll'); $('#pollon').checked = true; $('#pollopts').classList.remove('hidden'); } } catch {}
   // ---- flyer: picture (compressed), PDF (first page becomes the picture + link), Word (link) ----
   let flyer = null; // { image: Blob|null, file: File|null (sent as link), name, kind }
   const toJpeg = (src, maxSide = 1600, q = .82) => new Promise((res, rej) => {
@@ -1027,7 +1157,7 @@ async function sendPage() {
     return { media, link };
   }
   const draw = () => {
-    const raw0 = f.msg.value; const mode = f.mode.value;
+    const raw0 = withPoll(f.msg.value); const mode = f.mode.value;
     $('#linkwarn').style.display = mode !== 'VOICE' && (LINK_RE.test(raw0) || PHONE_RE.test(raw0)) ? '' : 'none'; const hasName = NAME_RE.test(raw0) || FULL_RE.test(raw0); NAME_RE.lastIndex = 0; FULL_RE.lastIndex = 0;
     const raw = personalize(raw0, 'Sarah Cohen');
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
@@ -1036,7 +1166,7 @@ async function sendPage() {
     const t = (usePre ? pre : '') + msg + (useFoot ? foot : '');          // what is actually sent (heading + message + STOP line)
     const fixed = segInfo((usePre ? pre : '') + (useFoot ? foot : '')).chars; // the part added automatically
     const i = segInfo(t); const mine = Math.max(0, i.chars - fixed);
-    const sms = reach ? reach.sms : 0, calls = reach ? reach.calls : 0;
+    const sms = reach ? reach.sms : 0, calls = reach && !pollOn() ? reach.calls : 0;
     $('#calc').innerHTML = `
       <div>Encoding</div><div>${i.encoding === 'GSM-7' ? '<span class="pill ok">GSM-7 (standard)</span>' : '<span class="pill warn">Unicode</span>'}</div>
       <div>Characters</div><div>${num(i.chars)} <span class="muted small">= ${num(fixed)} heading and STOP line + ${num(mine)} your message</span></div>
@@ -1064,7 +1194,7 @@ async function sendPage() {
     f.msg.rows = voice ? 2 : 6; f.msg.placeholder = voice ? 'e.g. Shabbos schedule announcement' : 'Mincha today is at 6:45 PM.';
     $('#calc').classList.toggle('hidden', voice); $('#badchars').style.display = voice ? 'none' : $('#badchars').style.display;
     $('#calch').textContent = voice ? 'Voice recording' : 'Message calculator';
-    $('#segnote').classList.toggle('hidden', voice); $('#flyerbox').classList.toggle('hidden', voice); $('#namehint').classList.toggle('hidden', voice);
+    $('#segnote').classList.toggle('hidden', voice); $('#flyerbox').classList.toggle('hidden', voice); $('#pollbox').classList.toggle('hidden', voice); $('#namehint').classList.toggle('hidden', voice);
     $('#vdndrow').classList.toggle('hidden', !(voice && reach && (reach.skipped_dnd > 0 || f.vdnd.checked)));
     if (voice && reach) $('#reach').innerHTML = `<div>Phone calls</div><div><b>${num(reach.calls)}</b> people</div>
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} (quiet hours)</div>` : ''}
@@ -1141,7 +1271,7 @@ async function sendPage() {
   f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (mode === 'VOICE' && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
   try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
@@ -1152,16 +1282,22 @@ async function sendPage() {
     e.preventDefault();
     if (f.mode.value === 'VOICE') return sendVoice();
     let t = f.msg.value.trim(); if (!t && !flyer) return toast('Write a message first', true);
+    const poll = pollOn();
+    if (poll && !t) return toast('Type the poll question in the message box', true);
+    if (poll && pollOpts().length < 2) return toast('A poll needs at least 2 answers', true);
+    const question = t; if (poll) t = withPoll(t);
     if (flyer && !flyer.image) return toast('That flyer can\'t be sent. Upload it as a picture (JPG, PNG) or a PDF.', true);
     if (LINK_RE.test(t) || PHONE_RE.test(t)) return toast('Please remove the web address or phone number. Your texting registration doesn\'t allow them in messages.', true);
     const flyerOnly = !t && !!flyer;           // nothing to say on a call: texting members only
+    const textOnly = flyerOnly || poll;
     if (flyerOnly) t = 'Please see the attached flyer.';
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const full = (pre && t.toLowerCase().startsWith(pre.replace(/:\s*$/, '').toLowerCase()) ? '' : pre) + t + (/stop/i.test(t) ? '' : foot);
     if (!reach || !reach.total) return toast('Nobody in this group would receive it', true);
     if (flyerOnly && !reach.sms) return toast('Everyone in this group gets calls, and a flyer can\'t be heard. Type a message to call them.', true);
-    const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = flyerOnly ? 0 : reach.calls;
-    const ok = await confirmBox(mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
+    if (poll && !reach.sms) return toast('Nobody in this group gets texts, so nobody could answer the poll.', true);
+    const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = textOnly ? 0 : reach.calls;
+    const ok = await confirmBox(poll ? '📊 Send this poll?' : mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
       `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + callsOut)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
        <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, 'Send now', false);
     if (!ok) return;
@@ -1169,12 +1305,19 @@ async function sendPage() {
     let up;
     try { up = await uploadFlyer(); } catch (err) { $('#sendbtn').disabled = false; return toast(err.message, true); }
     const msgOut = t;
+    let pollId = null;
+    if (poll) {
+      const pr = await sb.rpc('create_poll', { p_org: o.id, p_question: question, p_options: pollOpts(), p_group: f.group.value, p_days: +$('#polldays').value });
+      if (pr.error) { $('#sendbtn').disabled = false; return toast(pr.error.message, true); }
+      pollId = pr.data;
+    }
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: flyerOnly ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
+      p_mode: textOnly ? 'TEXT' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY', p_media_url: up.media });
     $('#sendbtn').disabled = false;
-    if (res.error) return toast(res.error.message, true);
-    toast('Sending now. It will appear in History in a moment.');
+    if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
+    toast(poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
     f.msg.value = ''; flyer = null; showFlyer();
+    if (poll) { $('#pollon').checked = false; $('#pollopts').classList.add('hidden'); $('#pollanswers').innerHTML = ''; pollRow(); pollRow(); loadReach(); }
   });
   async function sendVoice() {
     if (recTimer) return toast('Stop the recording first.', true);
@@ -1242,7 +1385,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   if (!S.org && !VIEWS[S.view]?.platform) { $('#main').innerHTML = head('Welcome', 'No organization yet. Create one under All Organizations.'); return; }
@@ -1250,6 +1393,7 @@ async function render() {
   if (S.view === 'overview') return overviewPage();
   if (S.view === 'settings') return settingsPage();
   if (S.view === 'send') return sendPage();
+  if (S.view === 'polls') return pollsPage();
   if (S.view === 'registration') return registrationPage();
   return tablePage(S.view);
 }
