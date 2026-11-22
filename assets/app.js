@@ -1431,7 +1431,15 @@ async function render() {
   const known = ['overview', 'settings', 'registration', 'send', 'polls'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
-  if (!S.org && !VIEWS[S.view]?.platform) { $('#main').innerHTML = head('Welcome', 'No organization yet. Create one under All Organizations.'); return; }
+  if (!S.org && !VIEWS[S.view]?.platform) {
+    $('#main').innerHTML = S.isPlatform ? head('Welcome', 'No organization yet. Create one under All Organizations.')
+      : head('Welcome', '') + `<div class="card panel" style="max-width:620px"><h3 style="margin-top:0">Your account isn't connected to an organization yet</h3>
+        <p>You're signed in as <b>${esc(S.user?.email || '')}</b>, but this email hasn't been added to any community or family account.</p>
+        <ul style="line-height:1.7"><li><b>New to CommunityConnect?</b> <a href="index.html#start">Create an account</a> for your community or family.</li>
+        <li><b>Joining an existing account?</b> Ask its admin to add this email under <b>Website Admins</b>, then sign in again.</li></ul>
+        <p class="muted small">Questions? Email <a href="mailto:hello@nivolink.com">hello@nivolink.com</a>.</p></div>`;
+    return;
+  }
   T.q = T.sortKey === S.view ? T.q : '';
   if (S.view === 'overview') return overviewPage();
   if (S.view === 'settings') return settingsPage();
