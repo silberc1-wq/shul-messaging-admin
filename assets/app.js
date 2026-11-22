@@ -94,6 +94,7 @@ function input(col, v) {
         `<label><input type="checkbox" value="${esc(c)}" ${(v || []).includes(c) ? 'checked' : ''}>${esc(c)}</label>`).join('') || '<span class="muted small">Add groups on the Groups page first.</span>'}</div>`;
     }
     case 'list': return `<input ${name} value="${esc((v || []).join(', '))}"><div class="hint">Separate with commas</div>`;
+    case 'map': return `<div class="mapbox" data-map><div class="muted small">Type an address above to see it on the map.</div></div>`;
     default: return `<input ${name} value="${esc(v)}" ${req} maxlength="${col.max || 500}">`;
   }
 }
@@ -101,6 +102,7 @@ function readForm(form, cols) {
   const out = {};
   for (const col of cols) {
     if (col.type === 'groups') { out[col.f] = $$(`[data-groups="${col.f}"] input:checked`, form).map(i => i.value); continue; }
+    if (col.type === 'map') continue;
     const el = form.elements[col.f]; if (!el) continue;
     let v = el.value.trim();
     if (col.type === 'bool') v = v === 'true';
@@ -150,12 +152,16 @@ const VIEWS = {
   contacts: { title: 'Contacts', perm: 'contacts', icon: '👥', table: 'contacts', scope: 'org', order: ['name', true], soft: true,
     desc: 'Everyone who receives announcements. Choose TEXT, CALL or EMAIL for each person.',
     cols: [
-      { f: 'name', label: 'Name', req: true }, { f: 'phone', label: 'Phone', type: 'phone', hint: 'Needed for TEXT and CALL.' },
+      { f: 'name', label: 'Name', edit: false }, { f: 'first_name', label: 'First name', req: true, table: false }, { f: 'last_name', label: 'Last name', table: false },
+      { f: 'phone', label: 'Phone', type: 'phone', hint: 'Needed for TEXT and CALL.' },
       { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS, req: true,
         render: (v, r) => `${esc(v)}${r.also_email && v !== 'EMAIL' ? ' <span class="muted small">+ email</span>' : ''}` },
       { f: 'email', label: 'Email', type: 'email', render: (v, r) => v ? `<span class="small">${esc(v)}</span>${r.email_opt_out_at ? ' <span class="pill bad">unsubscribed</span>' : ''}` : '',
         hint: 'Needed for EMAIL. Each person can have their own email address.' },
       { f: 'also_email', label: 'Also send by email', type: 'bool', table: false, hint: 'For TEXT and CALL members: they also get every announcement by email (free).' },
+      { f: 'address_street', label: 'Street address', table: false, max: 200 }, { f: 'address_city', label: 'City', table: false, max: 100 },
+      { f: 'address_state', label: 'State', table: false, max: 20 }, { f: 'address_zip', label: 'ZIP', table: false, max: 10 },
+      { f: '_map', label: 'Map', type: 'map', export: false, render: (v, r) => addrLine(r) ? `<a class="small nowrap" href="${esc(mapsUrl(r))}" target="_blank" rel="noopener">📍 ${esc(r.address_city || 'Map')}</a>` : '' },
       { f: 'groups', label: 'Groups', type: 'groups' }, { f: 'active', label: 'Active', type: 'bool' },
       { f: 'language', label: 'Language', type: 'select', opts: ['English', 'Yiddish', 'Hebrew', 'Russian', 'Spanish', 'French'], table: false },
       { f: 'is_test', label: 'Test contact', type: 'bool', table: false, hint: 'When Test Mode is on, only test contacts receive messages.' },
@@ -308,8 +314,10 @@ const VIEWS = {
   p_signups: { title: 'New Signups', icon: '✨', table: 'signups', scope: 'platform', order: ['created_at', false], soft: true, platform: true, noAdd: true,
     desc: 'People who signed up on the pricing page. Approve to create their organization and admin login.',
     cols: [
-      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'org_name', label: 'Organization' }, { f: 'contact_name', label: 'Contact' },
-      { f: 'email', label: 'Email', type: 'email' }, { f: 'phone', label: 'Phone', type: 'phone' },
+      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'account_type', label: 'Type', type: 'select', opts: ['COMMUNITY', 'FAMILY'] },
+      { f: 'org_name', label: 'Name' }, { f: 'contact_name', label: 'Contact' },
+      { f: 'email', label: 'Email', type: 'email' }, { f: 'phone', label: 'Phone', type: 'phone' }, { f: 'phone2', label: 'Phone 2', type: 'phone', table: false },
+      { f: 'est_texts', label: 'Texts / month', type: 'number' }, { f: 'est_calls', label: 'Calls / month', type: 'number' }, { f: 'est_emails', label: 'Emails / month', type: 'number' },
       { f: 'plan_id', label: 'Plan', edit: false, render: v => esc(S.plans.find(p => p.id === v)?.name || '') },
       { f: 'billing_period', label: 'Billing', type: 'select', opts: ['MONTHLY', 'YEARLY'] }, { f: 'extra_numbers', label: 'Extra #s', type: 'number' },
       { f: 'status', label: 'Status', type: 'status', edit: false }, { f: 'amount_paid', label: 'Paid', type: 'money', edit: false },
@@ -514,6 +522,8 @@ function mapColumns(rows) {
     last: pick(hdr, ['last', 'lastname', 'lname', 'surname', 'familyname']),
     phone: pick(hdr, ['phone', 'phonenumber', 'mobile', 'mobilephone', 'cell', 'cellphone', 'cellnumber', 'number', 'tel', 'telephone', 'whatsapp']),
     email: pick(hdr, ['email', 'emailaddress', 'mail', 'email1', 'eaddress']),
+    street: pick(hdr, ['street', 'address', 'streetaddress', 'address1', 'addressline1', 'addr']),
+    city: pick(hdr, ['city', 'town']), state: pick(hdr, ['state', 'st', 'province']), zip: pick(hdr, ['zip', 'zipcode', 'postal', 'postalcode', 'postcode']),
     method: pick(hdr, ['method', 'type', 'preference', 'contactmethod', 'textorcall', 'via']),
     groups: pick(hdr, ['groups', 'group', 'lists', 'list', 'department', 'departments', 'tags', 'category']),
     language: pick(hdr, ['language', 'lang']),
@@ -534,7 +544,7 @@ function importContacts() {
   let parsed = [];
   const f = modal('Import contacts', `
     <p class="muted" style="margin-top:0">Upload an Excel (.xlsx) or CSV file with one person per row. Columns we recognize:
-      <b>Name</b> (or First / Last), <b>Phone</b> and/or <b>Email</b>, and optionally <b>Method</b> (Text, Call or Email), <b>Groups</b> (separated by commas), Language, Notes.
+      <b>Name</b> (or First / Last), <b>Phone</b> and/or <b>Email</b>, and optionally <b>Method</b> (Text, Call or Email), <b>Groups</b> (separated by commas), Street, City, State, ZIP, Language, Notes.
       <a href="#" id="imp-sample">Download a sample file</a>.</p>
     <div class="field"><input type="file" name="file" accept=".csv,.xlsx,.xls,.txt" required></div>
     <div class="grid2">
@@ -590,7 +600,8 @@ function importContacts() {
       const mt = cellv(m.method).toLowerCase();
       parsed.push({ name, phone: d, email: em, method: !d ? 'EMAIL' : /mail/.test(mt) && em ? 'EMAIL' : /call|voice|phone|landline/.test(mt) ? 'CALL' : mt ? 'TEXT' : '',
         groups: cellv(m.groups).split(/[,;|/]+/).map(x => x.trim().toUpperCase().replace(/\s+/g, '_')).filter(x => x && x !== 'ALL'),
-        language: cellv(m.language), notes: cellv(m.notes) });
+        language: cellv(m.language), notes: cellv(m.notes), first_name: cellv(m.first), last_name: cellv(m.last),
+        street: cellv(m.street), city: cellv(m.city), state: cellv(m.state), zip: cellv(m.zip) });
     }
     const known = new Set(S.groups.map(g => g.code));
     const newGroups = [...new Set(parsed.flatMap(p => p.groups))].filter(g => !known.has(g) && /^[A-Z0-9_]{1,30}$/.test(g));
@@ -673,7 +684,7 @@ function drawTable(key) {
 function editRow(key, row) {
   const v = VIEWS[key]; const isNew = !row; const cols = v.cols.filter(c => c.edit !== false);
   const data = row || { ...(v.defaults || {}) };
-  const html = `<div class="grid2">${cols.map(c => `<div class="field" style="${['longtext', 'groups', 'list'].includes(c.type) ? 'grid-column:1/-1' : ''}">
+  const html = `<div class="grid2">${cols.map(c => `<div class="field" style="${['longtext', 'groups', 'list', 'map'].includes(c.type) ? 'grid-column:1/-1' : ''}">
     <label>${esc(c.label)}${c.req ? ' *' : ''}</label>${input(c, data[c.f])}${c.hint ? `<div class="hint">${esc(c.hint)}</div>` : ''}</div>`).join('')}</div>`;
   modal(isNew ? `Add ${v.title.replace(/s$/, '').toLowerCase()}` : 'Edit', html, { wide: cols.length > 8, onSave: async form => {
     const vals = readForm(form, cols);
@@ -685,10 +696,24 @@ function editRow(key, row) {
     if (v.afterSave) await v.afterSave();
     tablePage(key);
   } });
+  const box = $('[data-map]');
+  if (box) {
+    const form = box.closest('form'); let t, last = '';
+    const draw = () => {
+      const r = { address_street: form.address_street.value, address_city: form.address_city.value, address_state: form.address_state.value, address_zip: form.address_zip.value };
+      const a = addrLine(r); if (a === last) return; last = a;
+      box.innerHTML = a ? `<iframe title="Map" loading="lazy" referrerpolicy="no-referrer" src="https://maps.google.com/maps?q=${encodeURIComponent(a)}&z=15&output=embed"></iframe>
+        <a class="small" href="${esc(mapsUrl(r))}" target="_blank" rel="noopener">Open in Google Maps ↗</a>` : '<div class="muted small">Type an address above to see it on the map.</div>';
+    };
+    ['address_street', 'address_city', 'address_state', 'address_zip'].forEach(n => form[n].addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 700); }));
+    draw();
+  }
 }
+const addrLine = r => [r.address_street, r.address_city, [r.address_state, r.address_zip].filter(Boolean).join(' ')].map(x => (x || '').trim()).filter(Boolean).join(', ');
+const mapsUrl = r => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addrLine(r));
 
 function exportCsv(key) {
-  const v = VIEWS[key]; const cols = v.cols.filter(c => !['diff', 'members', '_rep'].includes(c.f));
+  const v = VIEWS[key]; const cols = v.cols.filter(c => !['diff', 'members', '_rep'].includes(c.f) && c.export !== false);
   const val = x => x == null ? '' : Array.isArray(x) ? x.join(', ') : typeof x === 'object' ? JSON.stringify(x) : String(x);
   const lines = [cols.map(c => c.label), ...T.rows.map(r => cols.map(c => val(r[c.f])))]
     .map(l => l.map(x => /^[=+\-@]/.test(x) ? "'" + x : x).map(x => `"${x.replace(/"/g, '""')}"`).join(','));

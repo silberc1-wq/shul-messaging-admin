@@ -25,6 +25,14 @@ function toast(msg, isError) {
 
 let plans = [];
 let period = 'MONTHLY';
+let acctType = 'COMMUNITY';
+
+document.querySelectorAll('[data-start]').forEach(b => b.addEventListener('click', () => {
+  acctType = b.dataset.start;
+  document.querySelectorAll('[data-start]').forEach(x => x.classList.toggle('on', x === b));
+  document.getElementById('pricing').scrollIntoView({ behavior: 'smooth' });
+  toast(acctType === 'FAMILY' ? 'Great! Now pick a plan for your family.' : 'Great! Now pick a plan for your community.');
+}));
 
 async function loadPlans() {
   const { data, error } = await sb.rpc('public_plans');
@@ -69,17 +77,28 @@ function openSignup(code) {
   back.innerHTML = `<form class="modal" novalidate>
     <header><h3>Sign up: ${esc(p.name)}</h3><button type="button" class="btn ghost" data-close>✕</button></header>
     <div class="body">
-      <p class="muted small" style="margin-top:0">Takes about 3 minutes. The texting-registration details are required by US phone carriers before your organization can send texts. Have your EIN handy.</p>
-      <h4 style="margin:6px 0 10px">Your organization</h4>
+      <div class="field"><label>This account is for *</label>
+        <div class="groups-pick" id="acct"><label><input type="radio" name="account_type" value="COMMUNITY" ${acctType !== 'FAMILY' ? 'checked' : ''}> 🏛️ A community or organization</label>
+          <label><input type="radio" name="account_type" value="FAMILY" ${acctType === 'FAMILY' ? 'checked' : ''}> 👨‍👩‍👧 My family</label></div></div>
+      <p class="muted small" style="margin-top:0" data-only="COMMUNITY">Takes about 3 minutes. The texting-registration details are required by US phone carriers before your organization can send texts. Have your EIN handy.</p>
+      <p class="muted small" style="margin-top:0" data-only="FAMILY">Takes about 2 minutes. Phone carriers need a few details about who is sending before texts can go out.</p>
+      <h4 style="margin:6px 0 10px" id="orghead">Your organization</h4>
       <div class="grid2">
-        <div class="field"><label>Organization name *</label><input name="org_name" required maxlength="200"></div>
-        <div class="field"><label>Legal name (as on IRS records)</label><input name="legal_name" maxlength="200"></div>
-        <div class="field"><label>Organization type</label><select name="entity_type">
+        <div class="field"><label id="orglab">Community / organization name *</label><input name="org_name" required maxlength="200"></div>
+        <div class="field" data-only="COMMUNITY"><label>Legal name (as on IRS records)</label><input name="legal_name" maxlength="200"></div>
+        <div class="field" data-only="COMMUNITY"><label>Organization type</label><select name="entity_type">
           <option value="NON_PROFIT">Nonprofit (501c3, church/organization)</option><option value="PRIVATE_PROFIT">Private company</option>
           <option value="SOLE_PROPRIETOR">Sole proprietor (no EIN)</option><option value="GOVERNMENT">Government</option></select></div>
-        <div class="field"><label>EIN (Tax ID)</label><input name="ein" placeholder="12-3456789" maxlength="20"></div>
-        <div class="field"><label>Website</label><input name="website" placeholder="https://" maxlength="200"></div>
-        <div class="field"><label>Approx. number of members to reach</label><input name="estimated_contacts" type="number" min="0"></div>
+        <div class="field" data-only="COMMUNITY"><label>EIN (Tax ID)</label><input name="ein" placeholder="12-3456789" maxlength="20"></div>
+        <div class="field" data-only="COMMUNITY"><label>Website</label><input name="website" placeholder="https://" maxlength="200"></div>
+        <div class="field"><label id="cntlab">About how many people will get messages?</label><input name="estimated_contacts" type="number" min="0"></div>
+      </div>
+      <h4 style="margin:6px 0 4px">About how much will you send each month?</h4>
+      <p class="muted small" style="margin:0 0 10px">A rough guess is fine. It helps us suggest the right plan. Count each person reached, e.g. 1 announcement to 100 people = 100 texts.</p>
+      <div class="grid3">
+        <div class="field"><label>💬 Texts</label><input name="est_texts" type="number" min="0" placeholder="e.g. 1000"></div>
+        <div class="field"><label>📞 Phone calls</label><input name="est_calls" type="number" min="0" placeholder="e.g. 50"></div>
+        <div class="field"><label>📧 Emails</label><input name="est_emails" type="number" min="0" placeholder="e.g. 200"></div>
       </div>
       <div class="field"><label>Street address</label><input name="street" maxlength="200"></div>
       <div class="grid2">
@@ -87,12 +106,13 @@ function openSignup(code) {
         <div class="grid2" style="gap:0 10px"><div class="field"><label>State</label><input name="state" maxlength="2" placeholder="NY"></div>
           <div class="field"><label>ZIP</label><input name="zip" maxlength="10"></div></div>
       </div>
-      <h4 style="margin:6px 0 10px">Main contact (gets the admin login)</h4>
+      <h4 style="margin:6px 0 10px">Your details (you get the admin login)</h4>
       <div class="grid2">
-        <div class="field"><label>First name *</label><input name="rep_first_name" required maxlength="100"></div>
-        <div class="field"><label>Last name *</label><input name="rep_last_name" required maxlength="100"></div>
-        <div class="field"><label>Title</label><input name="rep_title" placeholder="Rabbi, Executive Director…" maxlength="100"></div>
-        <div class="field"><label>Mobile phone</label><input name="phone" type="tel" maxlength="20"></div>
+        <div class="field"><label>First name *</label><input name="rep_first_name" required maxlength="100" autocomplete="given-name"></div>
+        <div class="field"><label>Last name *</label><input name="rep_last_name" required maxlength="100" autocomplete="family-name"></div>
+        <div class="field" data-only="COMMUNITY"><label>Title</label><input name="rep_title" placeholder="Rabbi, Executive Director…" maxlength="100"></div>
+        <div class="field"><label>Mobile phone *</label><input name="phone" type="tel" maxlength="20" autocomplete="tel"></div>
+        <div class="field"><label>Second phone</label><input name="phone2" type="tel" maxlength="20" placeholder="Home or office (optional)"></div>
       </div>
       <div class="field"><label>Email *</label><input name="email" type="email" required maxlength="200"><div class="hint">You'll sign in to the admin website with this email.</div></div>
       <h4 style="margin:6px 0 10px">Plan</h4>
@@ -103,7 +123,8 @@ function openSignup(code) {
         <div class="field"><label>Extra phone numbers</label><input name="extra_numbers" type="number" min="0" max="20" value="0">
           <div class="hint">${money(p.extra_number_monthly)}/month each</div></div>
       </div>
-      <div class="field"><label>How do members agree to get messages?</label>
+      <div class="field"><label>How did you hear about us?</label><input name="heard_about" maxlength="200"></div>
+      <div class="field" data-only="COMMUNITY"><label>How do members agree to get messages?</label>
         <textarea name="opt_in_method" maxlength="300" placeholder="Members sign up on our membership form or text JOIN to our number."></textarea></div>
       <div class="field"><label>Anything else?</label><textarea name="notes" maxlength="2000"></textarea></div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" name="agree" required style="margin-top:3px">
@@ -113,15 +134,25 @@ function openSignup(code) {
   </form>`;
   document.body.appendChild(back);
   const form = $('form', back);
+  const syncType = () => {
+    const t = form.account_type.value;
+    form.querySelectorAll('[data-only]').forEach(el => (el.style.display = el.dataset.only === t ? '' : 'none'));
+    $('#orghead', form).textContent = t === 'FAMILY' ? 'Your family' : 'Your organization';
+    $('#orglab', form).textContent = t === 'FAMILY' ? 'Family name * (e.g. The Silber Family)' : 'Community / organization name *';
+    $('#cntlab', form).textContent = t === 'FAMILY' ? 'About how many family members?' : 'About how many people will get messages?';
+  };
+  $('#acct', form).addEventListener('change', syncType); syncType();
   back.addEventListener('click', e => { if (e.target === back || e.target.closest('[data-close]')) back.remove(); });
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(form).entries());
-    if (!f.org_name || !f.rep_first_name || !f.rep_last_name || !f.email) return toast('Please fill in the required fields (*).', true);
+    if (!f.org_name || !f.rep_first_name || !f.rep_last_name || !f.email || !f.phone) return toast('Please fill in the required fields (*).', true);
+    if (f.account_type === 'FAMILY') { f.entity_type = 'SOLE_PROPRIETOR'; ['legal_name', 'ein', 'website', 'rep_title'].forEach(k => delete f[k]); f.opt_in_method = 'Family members are added by the account owner with their permission.'; }
     if (!form.agree.checked) return toast('Please confirm member consent.', true);
     const btn = $('button[type=submit]', form); btn.disabled = true; btn.textContent = 'Saving…';
     const compliance = {};
-    ['legal_name', 'entity_type', 'ein', 'website', 'street', 'city', 'state', 'zip', 'rep_first_name', 'rep_last_name', 'rep_title', 'opt_in_method']
+    ['legal_name', 'entity_type', 'ein', 'website', 'street', 'city', 'state', 'zip', 'rep_first_name', 'rep_last_name', 'rep_title', 'opt_in_method',
+     'account_type', 'phone2', 'est_texts', 'est_calls', 'est_emails', 'heard_about']
       .forEach(k => { if (f[k]) compliance[k] = f[k]; });
     compliance.rep_email = f.email; if (f.phone) compliance.rep_phone = f.phone;
     const { data: id, error } = await sb.rpc('public_signup', {

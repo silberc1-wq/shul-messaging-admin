@@ -8,7 +8,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://*.supabase.co https://esm.sh; img-src 'self' data:; form-action 'self'; base-uri 'self'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles.css?v=202611200720">
+<link rel="stylesheet" href="assets/styles.css?v=202611220200">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d3a6e'/><path d='M8 10h16v9H14l-5 4v-4H8z' fill='%239cc0f5'/></svg>">
 </head>
 <body>
@@ -34,7 +34,7 @@
       <h1>One message.<br><em>Everyone</em> hears it.</h1>
       <p class="lead">Your office texts one number. Members get the announcement by text, or a phone call for those who don't text. Only approved people can send, and only to their own groups.</p>
       <div class="cta">
-        <a class="btn gold" href="#pricing">See plans & sign up</a>
+        <a class="btn gold" href="#start">Get started</a>
         <a class="btn secondary" href="#how">How it works</a>
       </div>
       <p class="small muted" style="margin-top:14px">YES confirmation before anything goes out · STOP opt-out built in · Full history</p>
@@ -56,6 +56,25 @@ Texts: 128
 Calls: 14
 Failed: 0</div>
       </div>
+    </div>
+  </section>
+
+  <section id="start" class="doors">
+    <h2 style="text-align:center;margin-bottom:6px">Who is it for?</h2>
+    <p class="muted" style="text-align:center;margin:0 0 22px">Pick one to get started. You can change details later.</p>
+    <div class="door-grid">
+      <button class="card door" data-start="COMMUNITY" type="button">
+        <span class="door-ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6"/></svg></span>
+        <h3>Community</h3>
+        <p>Shuls, schools, organizations and businesses. Groups, approved senders, text, call and email announcements, polls and reports.</p>
+        <span class="btn gold">Sign up as a community</span>
+      </button>
+      <button class="card door" data-start="FAMILY" type="button">
+        <span class="door-ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="3"/><circle cx="17" cy="8" r="2.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M15 14.5c2.8-.6 6 1.2 6 4.5"/></svg></span>
+        <h3>Family</h3>
+        <p>Keep siblings, parents and cousins in the loop. One number for simchas, updates and reminders, by text, call or email.</p>
+        <span class="btn secondary">Sign up as a family</span>
+      </button>
     </div>
   </section>
 </div>
@@ -127,8 +146,8 @@ Failed: 0</div>
 </footer>
 
 <div id="toast"></div>
-<script src="assets/config.js?v=202611200720"></script>
-<script src="assets/site.js?v=202611200720"></script>
-<script type="module" src="assets/landing.js?v=202611200720"></script>
+<script src="assets/config.js?v=202611220200"></script>
+<script src="assets/site.js?v=202611220200"></script>
+<script type="module" src="assets/landing.js?v=202611220200"></script>
 </body>
 </html>
