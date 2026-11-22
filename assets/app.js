@@ -456,7 +456,7 @@ function complianceCols(platform) {
    NAV
    ============================================================ */
 const NAV_ORG = [
-  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['history'], ['polls', '📊', 'Polls'], ['replies'],
+  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['repeating', '🔁', 'Repeating'], ['history'], ['polls', '📊', 'Polls'], ['replies'],
   ['signup_requests'], ['opt_outs'], ['inbound'], ['h', 'Organization'], ['settings', '⚙️', 'Settings'], ['registration', '🪪', 'Texting Registration'],
   ['admins'], ['numbers'], ['audit'],
 ];
@@ -857,6 +857,9 @@ const SETTINGS_COLS = [
   { f: 'forward_replies_extra', label: 'Also forward to these phones', hint: 'Optional. Separate several numbers with commas, e.g. 845-555-1234, 718-555-9876' },
   { f: 'forward_replies_email', label: 'Also forward to email', hint: 'Optional. Several addresses can be separated with commas.' },
   { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
+  { f: 'zmanim_zip', label: 'Zmanim location (ZIP code)', hint: 'For repeating messages with candle lighting, shkia, havdalah etc. Times come from Hebcal.com.' },
+  { f: 'candle_minutes', label: 'Candle lighting, minutes before shkia', type: 'number', hint: 'Usually 18. Some communities use 15, 20, 22 or 40.' },
+  { f: 'havdalah_minutes', label: 'Havdalah, minutes after shkia', type: 'number', hint: 'Leave empty for tzeis (8.5°). Or e.g. 42, 50 or 72.' },
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
   { f: 'detect_voicemail', label: 'Tell apart people and answering machines on calls', type: 'bool', hint: 'The delivery report then shows "Answered" vs "Voicemail". Costs about ¾ cent extra per call. If off, a call picked up by voicemail counts as answered.' },
@@ -978,6 +981,101 @@ async function deliveryReport(h) {
   };
   $('#repq').addEventListener('input', drawRows); $('#repf').addEventListener('change', drawRows); drawRows();
   return 'keep';
+}
+
+/* ----- repeating messages (weekly zmanim etc.) ----- */
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ZMAN_TAGS = [
+  ['Shabbos', [['{parsha}', 'Parsha'], ['{candles}', 'Candle lighting'], ['{shkia_friday}', 'Shkia Friday'], ['{shma_shabbos}', 'Sof zman shma Shabbos (GRA)'],
+    ['{shma_mga_shabbos}', 'Shma Shabbos (MGA)'], ['{shkia_shabbos}', 'Shkia Shabbos'], ['{havdalah}', 'Havdalah'], ['{shabbos_date}', 'Shabbos date']]],
+  ['Today', [['{alos}', 'Alos'], ['{sunrise}', 'Netz'], ['{shma}', 'Shma (GRA)'], ['{shma_mga}', 'Shma (MGA)'], ['{tefila}', 'Tefila'], ['{chatzos}', 'Chatzos'],
+    ['{mincha_gedola}', 'Mincha gedola'], ['{plag}', 'Plag'], ['{shkia}', 'Shkia'], ['{tzeis}', 'Tzeis'], ['{date}', 'Date']]],
+  ['People', [['{name}', 'First name']]]];
+const fmtTime = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+async function repeatingPage() {
+  const o = S.org, main = $('#main');
+  main.innerHTML = head('Repeating messages', 'Messages that go out by themselves every week, like Shabbos zmanim. Times such as candle lighting are filled in fresh each week.',
+    S.perms.send ? '<button class="btn" id="newrep">+ New repeating message</button>' : '') + '<div id="reps"><div class="card panel empty">Loading…</div></div>';
+  const { data, error } = await sb.from('recurring_messages').select('*').eq('org_id', o.id).is('deleted_at', null).order('created_at');
+  if (error) { $('#reps').innerHTML = `<div class="card panel empty">${esc(error.message)}</div>`; return; }
+  $('#newrep')?.addEventListener('click', () => repeatingForm(null));
+  if (!data.length) {
+    $('#reps').innerHTML = `<div class="card panel"><h3 style="margin-top:0">No repeating messages yet</h3>
+      <p>For example, every <b>Friday at 10:00 AM</b> to <b>ALL</b>:</p>
+      <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;max-width:440px">Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nSof zman Shma {shma_shabbos}\nShabbos ends {havdalah}</div>
+      <p class="muted small">The times in { } are filled in for that week. {shkia_friday-10} means 10 minutes before shkia.${o.zmanim_zip ? '' : ' First set your <b>Zmanim location (ZIP code)</b> in <a href="#settings">Settings</a>.'}</p>
+      ${S.perms.send ? '<button class="btn" id="newrep2">Create one now</button>' : ''}</div>`;
+    $('#newrep2')?.addEventListener('click', () => repeatingForm(null, true));
+    return;
+  }
+  $('#reps').innerHTML = data.map(r => `<div class="card panel" style="margin-bottom:14px" data-id="${esc(r.id)}">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+      <div><h3 style="margin:0 0 4px">${esc(r.name)} ${r.active ? '<span class="pill ok">On</span>' : '<span class="pill">Paused</span>'}</h3>
+        <div class="muted small">Every ${esc(r.weekdays.map(d => DAYS[d]).join(', '))} at ${esc(fmtTime(r.send_time))} · <span class="chip">${esc(r.group_name)}</span> · ${esc({ PREF: 'by preference', TEXT: 'text only', CALL: 'call only' }[r.mode])}</div>
+        ${r.last_result ? `<div class="small" style="margin-top:4px;color:${/^Not sent/.test(r.last_result) ? 'var(--bad)' : 'var(--ink-2)'}">Last: ${esc(r.last_result)}</div>` : ''}</div>
+      ${S.perms.send ? `<div style="display:flex;gap:8px"><button class="btn secondary sm" data-edit>Edit</button><button class="btn secondary sm" data-toggle>${r.active ? 'Pause' : 'Turn on'}</button><button class="btn secondary sm" data-del>🗑</button></div>` : ''}</div>
+    <div class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;margin-top:10px" data-prev>${esc(r.message)}</div></div>`).join('');
+  data.forEach(async r => { // show this week's filled-in version
+    const { data: pv } = await sb.rpc('preview_recurring', { p_org: o.id, p_message: r.message });
+    const el = $(`[data-id="${r.id}"] [data-prev]`); if (el && pv) el.innerHTML = `<div class="muted small" style="margin-bottom:4px">This week it reads:</div>${esc(pv.message)}`;
+  });
+  $('#reps').onclick = async e => {
+    const card = e.target.closest('[data-id]'); if (!card) return; const r = data.find(x => x.id === card.dataset.id);
+    if (e.target.closest('[data-edit]')) return repeatingForm(r);
+    if (e.target.closest('[data-toggle]')) {
+      check(await sb.rpc('save_recurring', { p_org: o.id, p_id: r.id, p_name: r.name, p_group: r.group_name, p_message: r.message, p_mode: r.mode, p_weekdays: r.weekdays, p_time: r.send_time, p_active: !r.active }), r.active ? 'Paused' : 'Turned on');
+      return repeatingPage();
+    }
+    if (e.target.closest('[data-del]')) {
+      if (!(await confirmBox('Delete this repeating message?', `"${r.name}" will stop going out.`, 'Delete'))) return;
+      check(await sb.rpc('delete_recurring', { p_id: r.id }), 'Deleted'); return repeatingPage();
+    }
+  };
+}
+async function repeatingForm(r, example = false) {
+  const o = S.org;
+  const { data: groups } = await sb.rpc('my_send_groups', { p_org: o.id });
+  const { data: glist } = await sb.from('groups').select('code,number,name').eq('org_id', o.id).eq('active', true).is('deleted_at', null).order('number');
+  const allowed = (groups || []).includes('ALL') ? ['ALL', ...(glist || []).map(g => g.code).filter(c => c !== 'ALL')] : (groups || []);
+  const v = r || { name: example ? 'Shabbos zmanim' : '', group_name: 'ALL', mode: 'PREF', weekdays: [5], send_time: '10:00', active: true,
+    message: example ? 'Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nSof zman Shma {shma_shabbos}\nShabbos ends {havdalah}\nGood Shabbos!' : '' };
+  const f = modal(r ? 'Edit repeating message' : 'New repeating message', `
+    <div class="grid2">
+      <div class="field"><label>Name (for you)</label><input name="name" maxlength="80" value="${esc(v.name)}" placeholder="Shabbos zmanim"></div>
+      <div class="field"><label>Send to group</label><select name="group">${allowed.map(g => `<option ${g === v.group_name ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>
+      <div class="field" style="grid-column:1/-1"><label>Days</label><div class="groups-pick" id="rdays">${DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${v.weekdays.includes(i) ? 'checked' : ''}> ${d}</label>`).join('')}</div></div>
+      <div class="field"><label>Time</label><input name="time" type="time" value="${esc((v.send_time || '10:00').slice(0, 5))}"></div>
+      <div class="field"><label>How</label><select name="mode"><option value="PREF">By each member's preference</option><option value="TEXT">Text only</option><option value="CALL">Phone call only</option></select></div>
+      <div class="field" style="grid-column:1/-1"><label>Message</label><textarea name="msg" rows="6" maxlength="1600">${esc(v.message)}</textarea>
+        <div class="hint">Click to add a time. Add -10 or +5 inside the braces for minutes before/after, e.g. {shkia_friday-10}.</div>
+        <div id="ztags" style="margin-top:6px">${ZMAN_TAGS.map(([h, tags]) => `<div class="small" style="margin:6px 0 2px"><b>${h}</b></div>${tags.map(([t, l]) => `<button type="button" class="chip" data-tag="${t}" style="cursor:pointer;margin:0 4px 4px 0">${esc(l)}</button>`).join('')}`).join('')}</div></div>
+      <div class="field" style="grid-column:1/-1"><label>This week it would read</label><div id="rprev" class="small" style="white-space:pre-wrap;background:var(--cream);padding:10px 12px;border-radius:10px;min-height:60px">…</div></div>
+    </div>`, { wide: true, saveText: r ? 'Save' : 'Create', onSave: async form => {
+      const days = $$('#rdays input:checked').map(i => +i.value);
+      const res = await sb.rpc('save_recurring', { p_org: o.id, p_id: r?.id || null, p_name: form.name.value, p_group: form.group.value, p_message: form.msg.value,
+        p_mode: form.mode.value, p_weekdays: days, p_time: form.time.value, p_active: r ? r.active : true });
+      if (res.error) { toast(friendlyError(res.error), true); return false; }
+      toast(r ? 'Saved' : 'Created. It will go out by itself at the set time.'); repeatingPage(); return true;
+    } });
+  f.mode.value = v.mode;
+  let t;
+  const prev = async () => {
+    const { data: pv, error } = await sb.rpc('preview_recurring', { p_org: o.id, p_message: f.msg.value || '' });
+    const box = $('#rprev'); if (!box) return;
+    if (error) { box.textContent = error.message; return; }
+    let note = '';
+    if (!pv.zip) note = '<div style="color:var(--bad)">Set your Zmanim location (ZIP code) in Settings to fill in the times.</div>';
+    else if (pv.missing.length) note = `<div style="color:var(--warn)">${pv.loaded ? 'Unknown: ' + esc(pv.missing.map(m => '{' + m + '}').join(' ')) : 'Loading times for ' + esc(pv.zip) + '… this takes a minute.'}</div>`;
+    box.innerHTML = esc(pv.message) + note;
+    if (pv.zip && !pv.loaded) { clearTimeout(t); t = setTimeout(prev, 20000); }
+  };
+  f.msg.addEventListener('input', () => { clearTimeout(t); t = setTimeout(prev, 500); });
+  $('#ztags').addEventListener('click', e => {
+    const b = e.target.closest('[data-tag]'); if (!b) return; const ta = f.msg, tag = b.dataset.tag;
+    const s0 = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, s0) + tag + ta.value.slice(ta.selectionEnd ?? s0);
+    ta.focus(); ta.selectionStart = ta.selectionEnd = s0 + tag.length; prev();
+  });
+  prev();
 }
 
 /* ----- polls ----- */
@@ -1428,7 +1526,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send', 'polls'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   if (!S.org && !VIEWS[S.view]?.platform) {
@@ -1445,6 +1543,7 @@ async function render() {
   if (S.view === 'settings') return settingsPage();
   if (S.view === 'send') return sendPage();
   if (S.view === 'polls') return pollsPage();
+  if (S.view === 'repeating') return repeatingPage();
   if (S.view === 'registration') return registrationPage();
   return tablePage(S.view);
 }

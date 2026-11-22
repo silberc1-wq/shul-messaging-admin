@@ -349,3 +349,4 @@ table.data th { background: #f7f9fc; }
 .door .btn{align-self:flex-start;pointer-events:none}
 .door-ic{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:var(--sky-soft);color:var(--sky-ink)}
 @media (max-width:640px){.door-grid{grid-template-columns:1fr}}
+button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip:hover{border-color:var(--sky-line)}
