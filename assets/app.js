@@ -1275,6 +1275,7 @@ async function zmanimSettings() {
     <div id="zcustom"></div>
     <button type="button" class="btn secondary sm" id="zadd">+ Add a time</button>
     <div id="zprev" class="small muted" style="margin-top:12px"></div>`, { wide: true, onSave: async form => {
+      if ($$('#zcustom .zrow[data-i] input[data-k=label]').some(i => !i.value.trim())) { toast('Type a name for each of your own times (or remove it with ✕).', true); return false; }
       readRows();
       const [cr] = [form.cround.value];
       const res = await sb.rpc('save_zmanim_settings', { p_org: S.org.id, p_zip: form.zip.value, p_candle_minutes: +form.cmin.value, p_candle_round: +cr,
@@ -1290,14 +1291,14 @@ async function zmanimSettings() {
       <select data-k="round">${roundOpts.map(([v, l]) => `<option value="${v}" ${v === `${c.round || 0}|${c.dir || 'nearest'}` ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
       <button type="button" class="btn ghost sm" data-rm title="Remove">✕</button></div>`;
   const draw = () => { $('#zcustom').innerHTML = custom.length ? `<div class="small muted zrow zhead"><span>Name</span><span>Based on</span><span>Minutes</span><span></span><span>Rounding</span><span></span></div>` + custom.map(rowHtml).join('') : '<div class="small muted" style="margin-bottom:8px">None yet.</div>'; };
-  const readRows = () => {
-    custom = $$('#zcustom .zrow').map(r => { const g = k => $(`[data-k="${k}"]`, r).value; const [n, d] = g('round').split('|');
+  const readRows = (keepEmpty = false) => {
+    custom = $$('#zcustom .zrow[data-i]').map(r => { const g = k => $(`[data-k="${k}"]`, r).value; const [n, d] = g('round').split('|');
       const label = g('label').trim(); return { label, key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), base: g('base'),
-        offset: (g('side') === '-' ? -1 : 1) * Math.abs(parseInt(g('mins') || '0', 10)), round: +n, dir: d }; }).filter(c => c.label);
+        offset: (g('side') === '-' ? -1 : 1) * Math.abs(parseInt(g('mins') || '0', 10)), round: +n, dir: d }; }).filter(c => keepEmpty || c.label);
   };
   draw();
-  $('#zadd').addEventListener('click', () => { readRows(); custom.push({ label: '', base: 'shkia_friday', offset: -15, round: 5, dir: 'down' }); draw(); $$('#zcustom .zrow input[data-k=label]').pop().focus(); });
-  $('#zcustom').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; readRows(); custom.splice(+b.closest('.zrow').dataset.i, 1); draw(); });
+  $('#zadd').addEventListener('click', () => { readRows(true); custom.push({ label: '', base: 'shkia_friday', offset: -15, round: 5, dir: 'down' }); draw(); $$('#zcustom .zrow input[data-k=label]').pop().focus(); });
+  $('#zcustom').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; readRows(true); custom.splice(+b.closest('.zrow').dataset.i, 1); draw(); });
 }
 async function repeatingPage() {
   const o = await loadOrgZ(), main = $('#main');
