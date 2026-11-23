@@ -52,7 +52,7 @@ function renderPlans() {
       <h3>${esc(p.name)}</h3>
       <div class="muted small">${esc(p.tagline || '')}</div>
       <div class="amt">${shown == null ? '—' : money(shown)} <small>${unit}</small></div>
-      ${p.setup_fee ? `<div class="small muted">+ ${money(p.setup_fee)} one-time setup</div>` : '<div class="small muted">&nbsp;</div>'}
+      ${p.setup_fee ? `<div class="small muted">+ ${money(p.setup_fee)} one-time setup</div>` : '<div class="small" style="color:var(--ok);font-weight:600">✓ Free setup</div>'}
       <ul>${(p.features || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
       <button class="btn ${i === 1 ? 'gold' : 'secondary'}" data-plan="${esc(p.code)}">${hold ? 'Hold my number' : 'Get started'}</button>
     </div>`;
