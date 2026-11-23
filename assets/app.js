@@ -266,20 +266,21 @@ const VIEWS = {
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` },
-      { f: 'message', label: 'Message', render: (v, r) => `<div class="small" style="min-width:160px;max-width:260px;overflow-wrap:anywhere">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>`
+      { f: 'message', label: 'Message', render: (v, r) => `<div class="small" style="min-width:150px;max-width:220px;overflow-wrap:anywhere">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>`
           + [audioLink(r.audio_url, '▶ Play recording'),
              /^https:\/\//.test(r.media_url || '') ? `<a class="small" href="${esc(r.media_url)}" target="_blank" rel="noopener">🖼 View flyer</a>` : ''].filter(Boolean).join(' · ') },
       { f: 'audio_url', label: 'Recording', table: false }, { f: 'media_url', label: 'Flyer', table: false },
-      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: '_rep', label: 'Delivery', render: (v, r) => deliveryLine(r._rep) },
+      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: '_rep', label: 'Delivery', render: (v, r) => `<div style="min-width:150px">${deliveryLine(r._rep)}</div><div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:8px">${VIEWS.history.rowActions(r).map((a, i) => `<button class="btn ${a.label.includes('Report') ? '' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join('')}</div>` },
       { f: 'sent_count', label: 'Texts', type: 'number', table: false }, { f: 'calls_made', label: 'Calls', type: 'number', table: false },
-      { f: 'failed_count', label: 'Failed', type: 'number', table: false }, { f: 'status', label: 'Status', type: 'status' },
+      { f: 'failed_count', label: 'Failed', type: 'number', table: false }, { f: 'status', label: 'Status', type: 'status', table: false },
     ],
     after: async rows => {
       const ids = rows.slice(0, 300).map(r => r.id); if (!ids.length) return;
       const { data } = await sb.rpc('delivery_summary', { p_org: S.org.id, p_ids: ids });
       const m = Object.fromEntries((data || []).map(x => [x.history_id, x])); rows.forEach(r => { r._rep = m[r.id] || null; });
     },
-    rowActions: r => [...(r._rep && r._rep.tracked ? [{ label: 'Report', run: () => deliveryReport(r) }] : []), ...(S.perms.send ? [{ label: '↻ Use again', run: () => reuseMessage(r) }] : [])] },
+    actionsInCell: true,
+    rowActions: r => [...(r._rep && r._rep.tracked ? [{ label: '📊 Report', run: () => deliveryReport(r) }] : []), ...(S.perms.send ? [{ label: '↻ Use again', run: () => reuseMessage(r) }] : [])] },
 
   replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'Texts members sent back, and voicemails left on the phone line. They are also forwarded to the phones and email in Settings.',
@@ -735,7 +736,7 @@ function drawTable(key) {
   const canEdit = r => canWrite(v) && !v.noEdit && !r.deleted_at && (!v.canEdit || v.canEdit(r));
   $('#tbl').innerHTML = `<table class="data"><thead><tr>${cols.map(c => `<th data-sort="${esc(c.f)}">${esc(c.label)}${T.sort && T.sort[0] === c.f ? (T.sort[1] ? ' ▲' : ' ▼') : ''}</th>`).join('')}<th></th></tr></thead>
     <tbody>${rows.map(r => `<tr class="${r.deleted_at ? 'deleted' : ''}" data-id="${esc(r[v.idField || 'id'] ?? r.org_id)}">${cols.map(c => `<td>${cell(c, r)}</td>`).join('')}
-      <td class="actions">${(v.rowActions && (canWrite(v) || v.readOnly || v.platform) ? v.rowActions(r) : []).map((a, i) => `<button class="btn ${a.danger ? 'danger' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join(' ')}
+      <td class="actions">${(v.rowActions && !v.actionsInCell && (canWrite(v) || v.readOnly || v.platform) ? v.rowActions(r) : []).map((a, i) => `<button class="btn ${a.danger ? 'danger' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join(' ')}
       ${r.deleted_at ? '<button class="btn secondary sm" data-restore>Restore</button>' : ''}
       ${canEdit(r) ? '<button class="btn ghost sm" data-edit>Edit</button>' : ''}
       ${(v.soft || v.hardDelete) && canWrite(v) && !r.deleted_at ? '<button class="btn ghost sm" data-del title="Delete">🗑</button>' : ''}</td></tr>`).join('')}</tbody></table>`;
