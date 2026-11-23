@@ -128,7 +128,7 @@ function openSignup(code) {
         <textarea name="opt_in_method" maxlength="300" placeholder="Members sign up on our membership form or text JOIN to our number."></textarea></div>
       <div class="field"><label>Anything else?</label><textarea name="notes" maxlength="2000"></textarea></div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" name="agree" required style="margin-top:3px">
-        I confirm our members have agreed to receive messages, and we'll honor STOP requests.</label>
+        I confirm our members have agreed to receive messages, we'll honor STOP requests, and I agree to the <a href="terms.html" target="_blank">Terms</a> and <a href="privacy.html" target="_blank">Privacy Policy</a>.</label>
     </div>
     <footer><button type="button" class="btn secondary" data-close>Cancel</button><button class="btn gold" type="submit">Continue to payment</button></footer>
   </form>`;
