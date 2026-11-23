@@ -243,6 +243,7 @@ const VIEWS = {
   scheduled: { title: 'Scheduled', perm: 'send', icon: '⏰', table: 'scheduled_messages', scope: 'org', order: ['scheduled_for', false], soft: true,
     desc: 'Messages waiting to go out at a set time (checked every 5 minutes). Once sent, they move to History.',
     toggle: { label: 'Show already sent', keep: r => r.status === 'SCHEDULED' }, canEdit: r => r.status === 'SCHEDULED',
+    rowActions: r => [{ label: '↻ Use again', run: () => reuseMessage(r) }],
     empty: 'Nothing is scheduled right now. Click + Add to schedule a message, or see sent messages in History.',
     cols: [
       { f: 'scheduled_for', label: 'Send at', type: 'datetime', req: true },
@@ -274,7 +275,7 @@ const VIEWS = {
       const { data } = await sb.rpc('delivery_summary', { p_org: S.org.id, p_ids: ids });
       const m = Object.fromEntries((data || []).map(x => [x.history_id, x])); rows.forEach(r => { r._rep = m[r.id] || null; });
     },
-    rowActions: r => r._rep && r._rep.tracked ? [{ label: 'Report', run: () => deliveryReport(r) }] : [] },
+    rowActions: r => [...(r._rep && r._rep.tracked ? [{ label: 'Report', run: () => deliveryReport(r) }] : []), ...(S.perms.send ? [{ label: '↻ Use again', run: () => reuseMessage(r) }] : [])] },
 
   replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'Texts members sent back, and voicemails left on the phone line. They are also forwarded to the phones and email in Settings.',
@@ -1027,6 +1028,19 @@ const fixSmart = t => [...t].map(c => SMART[c] ?? c).join('');
 const LINK_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|org|net|us|io|info|co|me|ly|gl)\b)/i, PHONE_RE = /(\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/;
 const NAME_RE = /\{\s*(name|first\s*name|firstname|first)\s*\}/gi, FULL_RE = /\{\s*(full\s*name|fullname)\s*\}/gi;
 const personalize = (t, name) => t.replace(FULL_RE, name || 'Friend').replace(NAME_RE, (name || '').split(' ')[0] || 'Friend');
+/* ----- use a past message again ----- */
+const MODE_FROM_CMD = { TEXT: 'TEXT', CALL: 'CALL', EMERGENCY: 'EMERGENCY', VOICE: 'VOICE' };
+function reusePayload(r) {
+  let msg = r.message || '', poll = null;
+  if (r.media_url && msg === 'Please see the attached flyer.') msg = '';
+  if (r.audio_url && msg === '[Voice recording]') msg = '';
+  const m = msg.match(/^([\s\S]*?)\n((?:Reply \d for .+\n?)+)$/);
+  if (m) { poll = m[2].trim().split('\n').map(l => l.replace(/^Reply \d for /, '').trim()).filter(Boolean); msg = m[1]; }
+  return { message: msg, group: r.group_name, mode: r.audio_url ? 'VOICE' : (MODE_FROM_CMD[r.command] || (r.method_override === 'TEXT' || r.method_override === 'TEXTERS' ? 'TEXT' : r.method_override === 'CALL' ? 'CALL' : 'PREF')),
+    media_url: r.media_url || null, audio_url: r.audio_url || null, poll };
+}
+function reuseMessage(r) { try { sessionStorage.setItem('cc_reuse', JSON.stringify(reusePayload(r))); } catch {} go('send'); return 'nav'; }
+
 /* ----- delivery report ----- */
 function deliveryLine(x) {
   if (!x || !x.tracked) return '<span class="muted small">—</span>';
@@ -1349,7 +1363,7 @@ async function sendPage() {
         <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
         <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
       </div>
-      <div class="field"><label id="msglabel">Message</label><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="${JEW() ? 'Mincha today is at 6:45 PM.' : 'Meeting tonight at 7 PM.'}"></textarea>
+      <div class="field"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px"><label id="msglabel">Message</label><button type="button" class="btn ghost sm" id="pastmsg" style="margin-bottom:4px">↻ Use a past message</button></div><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="${JEW() ? 'Mincha today is at 6:45 PM.' : 'Meeting tonight at 7 PM.'}"></textarea>
         <div class="hint" id="namehint">Tip: type <b>{name}</b> to greet each person by their first name, e.g. "Dear {name}, …"</div>
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div>
         <div id="linkwarn" class="small" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad)">⚠️ Your message has a web address or phone number. Your texting registration doesn't allow these, so carriers may block it. Please remove it.</div></div>
@@ -1611,6 +1625,46 @@ async function sendPage() {
     reach = error ? null : data; draw();
   };
   try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
+  // ---- fill the form from a past message (words, group, how, flyer, recording, poll) ----
+  async function applyReuse(p) {
+    if (!p) return;
+    if (p.group && [...f.group.options].some(x => x.value === p.group)) f.group.value = p.group;
+    if (p.mode && [...f.mode.options].some(x => x.value === p.mode)) f.mode.value = p.mode;
+    f.msg.value = p.message || '';
+    $('#pollon').checked = !!p.poll; $('#pollopts').classList.toggle('hidden', !p.poll); $('#pollanswers').innerHTML = '';
+    (p.poll && p.poll.length ? p.poll : ['', '']).slice(0, 5).forEach(v => pollRow(v));
+    if (p.audio_url && p.mode === 'VOICE') {
+      f.querySelector('input[name=vsrc][value=url]').checked = true; f.querySelector('input[name=vsrc][value=url]').dispatchEvent(new Event('change'));
+      f.vurl.value = p.audio_url; f.vurl.dispatchEvent(new Event('change'));
+    }
+    flyer = null;
+    if (p.media_url) {
+      try { const b = await (await fetch(p.media_url)).blob(); flyer = { image: b, file: null, name: 'flyer.jpg', kind: 'image' }; }
+      catch { toast('The old flyer could not be loaded. Upload it again if you need it.', true); }
+    }
+    showFlyer(); f.mode.dispatchEvent(new Event('change')); draw();
+    toast('Filled in from the past message. Check it, change anything, then send.');
+    f.msg.focus();
+  }
+  try { const r = sessionStorage.getItem('cc_reuse'); sessionStorage.removeItem('cc_reuse'); if (r) setTimeout(() => applyReuse(JSON.parse(r)), 0); } catch {}
+  $('#pastmsg').addEventListener('click', async () => {
+    const { data } = await sb.from('message_history').select('id,created_at,group_name,command,message,media_url,audio_url,recipient_count')
+      .eq('org_id', o.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(200);
+    const list = data || [];
+    const m = modal('Use a past message', `<input type="search" id="pmq" placeholder="Search past messages…" style="width:100%;margin-bottom:10px">
+      <div id="pml" style="max-height:60vh;overflow:auto"></div>`, { wide: true });
+    const drawL = () => {
+      const q = ($('#pmq').value || '').toLowerCase();
+      const rows = list.filter(r => !q || (r.message || '').toLowerCase().includes(q) || (r.group_name || '').toLowerCase().includes(q)).slice(0, 80);
+      $('#pml').innerHTML = rows.map(r => `<button type="button" class="pm-item" data-id="${esc(r.id)}">
+          <div class="small muted">${esc(fmtDT(r.created_at))} · <span class="chip">${esc(r.group_name || '')}</span> ${r.audio_url ? '🎙️' : ''}${r.media_url ? '🖼' : ''}</div>
+          <div class="pm-text">${esc((r.message || '').slice(0, 240))}</div></button>`).join('') || '<div class="empty">No past messages found.</div>';
+    };
+    $('#pmq').addEventListener('input', drawL); $('#pmq').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+    $('#pml').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return;
+      const r = list.find(x => x.id === b.dataset.id); m.closest('.modal-back')?.remove(); applyReuse(reusePayload(r)); });
+    drawL();
+  });
   f.msg.addEventListener('input', draw);
   f.group.addEventListener('change', loadReach); f.mode.addEventListener('change', loadReach);
   loadReach();

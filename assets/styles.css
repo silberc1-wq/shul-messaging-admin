@@ -382,3 +382,6 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
 .addr-sug button:hover,.addr-sug button.on{background:var(--sky-soft)}
 .addr-src{font-size:10.5px;color:var(--ink-2);padding:4px 12px 6px;border-top:1px solid var(--line)}
 .rep-share{display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 12px}
+.pm-item{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;font:inherit}
+.pm-item:hover{border-color:var(--sky-line);background:var(--sky-soft)}
+.pm-text{white-space:pre-wrap;font-size:14px;margin-top:4px;overflow-wrap:anywhere}
