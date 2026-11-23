@@ -239,7 +239,9 @@ const VIEWS = {
     cols: [
       { f: 'created_at', label: 'Received', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext', render: v => `<div class="small" style="min-width:160px;max-width:260px">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>` },
-      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'status', label: 'Status', type: 'status' },
+      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'status', label: 'Status', type: 'status', render: v => { const u = String(v || '').toUpperCase();
+        const m = { YES: ['Sent', 'ok'], SENT: ['Sent', 'ok'], CONFIRMED: ['Sent', 'ok'], 'PENDING CONFIRMATION': ['Waiting for YES', 'warn'], NO: ['Cancelled', 'bad'], CANCELLED: ['Cancelled', 'bad'], EXPIRED: ['Expired', ''] }[u];
+        return m ? `<span class="pill ${m[1]}" title="${esc(u)}">${m[0]}</span>` : pill(v); } },
     ],
     rowActions: r => r.status === 'PENDING CONFIRMATION' ? [{ label: 'Cancel', danger: true, run: async () => {
       check(await sb.from('pending_messages').update({ status: 'CANCELLED', confirmed_at: new Date().toISOString() }).eq('id', r.id), 'Cancelled'); } }] : [] },
