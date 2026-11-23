@@ -1058,7 +1058,45 @@ async function deliveryReport(h) {
     <div class="toolbar" style="padding:0;margin:0 0 8px"><input type="search" id="repq" placeholder="Search name or number…">
       <select id="repf"><option value="">Everyone</option>${Object.entries(RESULT_LABEL).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}<option value="replied">Replied</option></select></div>
     <div class="table-wrap" style="max-height:50vh;overflow:auto"><table class="data"><thead><tr><th>Name</th><th>Phone / email</th><th>How</th><th>Result</th><th>Listened</th><th>Reply</th></tr></thead><tbody id="repbody"></tbody></table></div>`;
-  modal('Delivery report', body, { wide: true });
+  modal('Delivery report', `<div class="rep-share"><button type="button" class="btn secondary sm" data-rs="copy">📋 Copy summary</button>
+      <button type="button" class="btn secondary sm" data-rs="csv">⬇ Download (Excel)</button><button type="button" class="btn secondary sm" data-rs="print">🖨 Print / PDF</button>
+      ${navigator.share ? '<button type="button" class="btn secondary sm" data-rs="share">📤 Share</button>' : ''}</div>` + body, { wide: true });
+  // ---- sharing ----
+  const when = fmtDT(h.created_at), title = `Delivery report: ${when} · ${h.group_name || ''}`;
+  const sumLines = () => {
+    const L = [title, `Message: ${h.message || ''}`, ''];
+    if (x.delivered + x.failed + x.pending) L.push(`Texts: ${x.delivered} delivered${x.failed ? `, ${x.failed} failed` : ''}${x.pending ? `, ${x.pending} waiting` : ''}`);
+    if (callsTotal) L.push(`Calls: ${x.answered} answered${x.voicemail ? `, ${x.voicemail} voicemail` : ''}${x.no_answer ? `, ${x.no_answer} no answer` : ''}${x.call_failed ? `, ${x.call_failed} failed` : ''}, ${Math.round((x.listen_seconds || 0) / 60)} min listened`);
+    if (x.emailed) L.push(`Emails: ${x.emailed} sent`);
+    L.push(`Replied: ${x.replies}`);
+    return L.join('\n');
+  };
+  const rowsOut = () => rows.map(r => { const [l] = RESULT_LABEL[r.result] || [r.result];
+    return { Name: r.name || '', 'Phone / email': r.phone ? fmtPhone(r.phone) : (r.email || ''), How: r.channel === 'call' ? 'Call' : r.channel === 'email' ? 'Email' : 'Text',
+      Result: l, Reason: r.error_code ? (ERR_LABEL[r.error_code] || 'Error ' + r.error_code) : '', Listened: r.channel === 'call' && r.duration ? secs(r.duration) : '', Reply: r.replied || '' }; });
+  $('.rep-share').addEventListener('click', async e => {
+    const k = e.target.closest('[data-rs]')?.dataset.rs; if (!k) return;
+    if (k === 'copy') { try { await navigator.clipboard.writeText(sumLines()); toast('Summary copied. Paste it into an email or text.'); } catch { toast('Could not copy', true); } }
+    if (k === 'share') { try { await navigator.share({ title, text: sumLines() }); } catch {} }
+    if (k === 'csv') {
+      const data = rowsOut(), cols = ['Name', 'Phone / email', 'How', 'Result', 'Reason', 'Listened', 'Reply'];
+      const q = v => { v = String(v ?? ''); if (/^[=+\-@]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+      const csv = '\ufeff' + sumLines().split('\n').map(l => q(l)).join('\n') + '\n\n' + cols.join(',') + '\n' + data.map(d => cols.map(c => q(d[c])).join(',')).join('\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `delivery-report-${(h.created_at || '').slice(0, 10)}-${(h.group_name || 'all').toLowerCase()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }
+    if (k === 'print') {
+      const w = window.open('', '_blank'); if (!w) return toast('Allow pop-ups to print', true);
+      const data = rowsOut();
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;color:#1b2a41;margin:28px}h1{font-size:20px;margin:0 0 4px}
+        .sum{white-space:pre-wrap;background:#eef4fb;border-radius:10px;padding:12px 14px;margin:12px 0 18px;font-size:14px}table{border-collapse:collapse;width:100%;font-size:12.5px}
+        th,td{border-bottom:1px solid #dde5f0;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f6fb}.foot{margin-top:16px;font-size:11px;color:#6b7a90}</style></head><body>
+        <h1>${esc(S.org.name)}</h1><div class="sum">${esc(sumLines())}</div>
+        <table><thead><tr>${Object.keys(data[0] || { Name: '' }).map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${data.map(d => `<tr>${Object.values(d).map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <div class="foot">CommunityConnect · printed ${esc(new Date().toLocaleString())}</div></body></html>`);
+      w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    }
+  });
   $('#repq').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
   const drawRows = () => {
     const q = ($('#repq').value || '').toLowerCase(), f = $('#repf').value;

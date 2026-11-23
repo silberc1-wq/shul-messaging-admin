@@ -381,3 +381,4 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
 .addr-sug button b{font-weight:600;font-size:14px}.addr-sug button span{font-size:12px;color:var(--ink-2)}
 .addr-sug button:hover,.addr-sug button.on{background:var(--sky-soft)}
 .addr-src{font-size:10.5px;color:var(--ink-2);padding:4px 12px 6px;border-top:1px solid var(--line)}
+.rep-share{display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 12px}
