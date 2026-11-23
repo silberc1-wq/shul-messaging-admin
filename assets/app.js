@@ -492,23 +492,48 @@ function complianceCols(platform) {
 /* ============================================================
    NAV
    ============================================================ */
+// The side menu: a few main items; related pages sit together as tabs at the top of the page
 const NAV_ORG = [
-  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'], ['contacts'], ['groups'], ['controllers'], ['h', 'Messages'], ['pending'], ['scheduled'], ['repeating', '🔁', 'Repeating'], ['history'], ['polls', '📊', 'Polls'], ['replies'],
-  ['signup_requests'], ['opt_outs'], ['inbound'], ['h', 'Organization'], ['settings', '⚙️', 'Settings'], ['registration', '🪪', 'Texting Registration'],
-  ['admins'], ['numbers'], ['audit'],
+  ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'],
+  { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Scheduled'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['pending', 'Waiting for YES']] },
+  { g: 'inbox', icon: '📥', label: 'Inbox', tabs: [['replies', 'Replies & voicemails'], ['signup_requests', 'Signup requests'], ['inbound', 'All incoming texts']] },
+  { g: 'people', icon: '👥', label: 'People', tabs: [['contacts', 'Contacts'], ['groups', 'Groups'], ['controllers', 'Texters'], ['opt_outs', 'Opted out']] },
+  { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
 ];
-const NAV_PLATFORM = [['h', 'Platform owner'], ['p_orgs'], ['p_signups'], ['p_usage'], ['p_invoices'], ['p_plans'], ['p_compliance'], ['p_numbers'],
-  ['p_setup'], ['p_leads'], ['p_support'], ['p_tests'], ['p_roadmap'], ['p_costs'], ['p_staff'], ['p_settings']];
+const NAV_PLATFORM = [['h', 'Platform owner'],
+  { g: 'p_cust', icon: '🏛️', label: 'Customers', tabs: [['p_orgs', 'Organizations'], ['p_signups', 'New signups'], ['p_usage', 'Usage'], ['p_invoices', 'Invoices']] },
+  { g: 'p_setup', icon: '🧰', label: 'Setup', tabs: [['p_setup', 'Setup tasks'], ['p_compliance', 'Compliance'], ['p_numbers', 'Numbers'], ['p_tests', 'Tests']] },
+  { g: 'p_biz', icon: '💼', label: 'Business', tabs: [['p_plans', 'Plans & pricing'], ['p_leads', 'Leads'], ['p_support', 'Support'], ['p_roadmap', 'Roadmap'], ['p_costs', 'Costs'], ['p_staff', 'Staff'], ['p_settings', 'Platform settings']] }];
+const navAllowed = k => !VIEWS[k]?.needs || S.perms[VIEWS[k].needs];
+const groupOf = k => [...NAV_ORG, ...NAV_PLATFORM].find(x => x.g && x.tabs.some(t => t[0] === k));
 
 const canWrite = v => !v.readOnly && (!v.perm || !!S.perms[v.perm]);
 function renderNav() {
-  const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])].filter(([k]) => !VIEWS[k]?.needs || S.perms[VIEWS[k].needs]);
-  $('#nav').innerHTML = items.map(([k, icon, label]) => {
+  const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])];
+  const cur = groupOf(S.view);
+  $('#nav').innerHTML = items.map(it => {
+    if (it.g) {
+      const tabs = it.tabs.filter(([k]) => navAllowed(k) && (VIEWS[k] || ['settings', 'registration', 'send', 'polls', 'repeating'].includes(k)));
+      if (!tabs.length) return '';
+      const last = localStorageGet('cc_tab_' + it.g), to = tabs.some(t => t[0] === last) ? last : tabs[0][0];
+      const b = tabs.reduce((n, [k]) => n + (+S.badges[k] || 0), 0);
+      return `<a href="#${to}" class="${cur === it ? 'on' : ''}" title="${esc(it.label)}"><span class="ni">${it.icon}</span><span class="nl">${esc(it.label)}</span>${b ? `<span class="badge">${b}</span>` : ''}</a>`;
+    }
+    const [k, icon, label] = it;
     if (k === 'h') return `<div class="nav-h">${esc(icon)}</div>`;
+    if (!navAllowed(k)) return '';
     const v = VIEWS[k] || {}; const b = S.badges[k];
     const t = label || v.title;
     return `<a href="#${k}" class="${S.view === k ? 'on' : ''}" title="${esc(t)}"><span class="ni">${icon || v.icon}</span><span class="nl">${esc(t)}</span>${b ? `<span class="badge">${b}</span>` : ''}</a>`;
   }).join('');
+  // tabs across the top for the pages that belong together
+  const st = $('#subtabs');
+  if (cur && S.org || cur && cur.g.startsWith('p_')) {
+    localStorageSet('cc_tab_' + cur.g, S.view);
+    const tabs = cur.tabs.filter(([k]) => navAllowed(k));
+    st.innerHTML = tabs.map(([k, l]) => `<a href="#${k}" class="${S.view === k ? 'on' : ''}">${esc(l)}${S.badges[k] ? ` <span class="badge">${S.badges[k]}</span>` : ''}</a>`).join('');
+    st.classList.remove('hidden');
+  } else st.classList.add('hidden');
 }
 function go(v) { if (location.hash !== '#' + v) location.hash = v; else render(); }
 window.addEventListener('hashchange', () => { $('#side').classList.remove('open'); render(); });

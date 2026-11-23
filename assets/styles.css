@@ -385,3 +385,12 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
 .pm-item{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;font:inherit}
 .pm-item:hover{border-color:var(--sky-line);background:var(--sky-soft)}
 .pm-text{white-space:pre-wrap;font-size:14px;margin-top:4px;overflow-wrap:anywhere}
+/* tabs across the top for related pages */
+.maincol{min-width:0}
+.subtabs{display:flex;gap:4px;padding:16px 32px 0;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);background:var(--cream)}
+.subtabs::-webkit-scrollbar{display:none}
+.subtabs a{white-space:nowrap;padding:9px 14px;border-radius:10px 10px 0 0;color:var(--ink-2);text-decoration:none;font-weight:500;font-size:14px;border:1px solid transparent;border-bottom:0;margin-bottom:-1px}
+.subtabs a:hover{color:var(--ink);background:rgba(255,255,255,.6)}
+.subtabs a.on{background:#fff;color:var(--sky-ink);border-color:var(--line);font-weight:600}
+.subtabs .badge{margin-left:4px}
+@media (max-width:900px){.subtabs{padding:10px 16px 0}}
