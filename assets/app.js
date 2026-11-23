@@ -718,7 +718,7 @@ function drawTable(key) {
     }
     if (btn.dataset.restore !== undefined) { check(await sb.from(v.table).update({ deleted_at: null }).eq('id', r.id), 'Restored'); return tablePage(key); }
     if (btn.dataset.act !== undefined) { const a = v.rowActions(r)[+btn.dataset.act]; btn.disabled = true;
-      try { const out = await a.run(); if (out !== 'nav' && out !== 'keep') tablePage(key); } catch (err) { btn.disabled = false; } }
+      try { const out = await a.run(); if (out === 'keep') btn.disabled = false; else if (out !== 'nav') tablePage(key); } catch (err) { btn.disabled = false; } }
   };
 }
 
