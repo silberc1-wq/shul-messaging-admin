@@ -235,7 +235,9 @@ const VIEWS = {
     ], defaults: { role: 'GROUP ADMIN', active: true } },
 
   pending: { title: 'Waiting for YES', perm: 'send', icon: '⏳', table: 'pending_messages', scope: 'org', order: ['created_at', false], soft: true, noAdd: true, noEdit: true,
-    desc: 'Messages texted in from a phone wait here until the sender replies YES. Confirmed and cancelled ones stay listed.',
+    desc: 'When someone texts in a message from their phone, it waits here until they reply YES. Once confirmed it goes out and shows in History.',
+    toggle: { label: 'Show confirmed and cancelled', keep: r => r.status === 'PENDING CONFIRMATION' },
+    empty: 'Nothing is waiting for a YES right now. Messages texted in from a phone show here until the sender confirms them.',
     cols: [
       { f: 'created_at', label: 'Received', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext', render: v => `<div class="small" style="min-width:160px;max-width:260px">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>` },
