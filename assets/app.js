@@ -235,13 +235,13 @@ const VIEWS = {
     ], defaults: { role: 'GROUP ADMIN', active: true } },
 
   pending: { title: 'Waiting for YES', perm: 'send', icon: '⏳', table: 'pending_messages', scope: 'org', order: ['created_at', false], soft: true, noAdd: true, noEdit: true,
-    desc: 'When someone texts in a message from their phone, it waits here until they reply YES. Once confirmed it goes out and shows in History.',
-    toggle: { label: 'Show confirmed and cancelled', keep: r => r.status === 'PENDING CONFIRMATION' },
+    desc: 'When someone texts in a message from their phone, it waits here until they reply YES. If no YES comes within the time set in Settings (30 minutes unless changed), it expires and nothing is sent.',
+    toggle: { label: 'Show confirmed and cancelled', keep: r => r.status === 'PENDING CONFIRMATION' && !(r.expires_at && new Date(r.expires_at) < new Date()) },
     empty: 'Nothing is waiting for a YES right now. Messages texted in from a phone show here until the sender confirms them.',
     cols: [
       { f: 'created_at', label: 'Received', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext', render: v => `<div class="small" style="min-width:160px;max-width:260px">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>` },
-      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'status', label: 'Status', type: 'status', render: v => { const u = String(v || '').toUpperCase();
+      { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'status', label: 'Status', type: 'status', render: (v, r) => { let u = String(v || '').toUpperCase(); if (u === 'PENDING CONFIRMATION' && r?.expires_at && new Date(r.expires_at) < new Date()) u = 'EXPIRED';
         const m = { YES: ['Sent', 'ok'], SENT: ['Sent', 'ok'], CONFIRMED: ['Sent', 'ok'], 'PENDING CONFIRMATION': ['Waiting for YES', 'warn'], NO: ['Cancelled', 'bad'], CANCELLED: ['Cancelled', 'bad'], EXPIRED: ['Expired', ''] }[u];
         return m ? `<span class="pill ${m[1]}" title="${esc(u)}">${m[0]}</span>` : pill(v); } },
     ],
