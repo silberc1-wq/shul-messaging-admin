@@ -241,7 +241,9 @@ const VIEWS = {
       check(await sb.from('pending_messages').update({ status: 'CANCELLED', confirmed_at: new Date().toISOString() }).eq('id', r.id), 'Cancelled'); } }] : [] },
 
   scheduled: { title: 'Scheduled', perm: 'send', icon: '⏰', table: 'scheduled_messages', scope: 'org', order: ['scheduled_for', false], soft: true,
-    desc: 'Messages that go out automatically at a set time (checked every 5 minutes).',
+    desc: 'Messages waiting to go out at a set time (checked every 5 minutes). Once sent, they move to History.',
+    toggle: { label: 'Show already sent', keep: r => r.status === 'SCHEDULED' }, canEdit: r => r.status === 'SCHEDULED',
+    empty: 'Nothing is scheduled right now. Click + Add to schedule a message, or see sent messages in History.',
     cols: [
       { f: 'scheduled_for', label: 'Send at', type: 'datetime', req: true },
       { f: 'group_name', label: 'Group', type: 'select', opts: groupOpts, req: true, render: v => `<span class="chip">${esc(v)}</span>` },
@@ -672,11 +674,13 @@ async function tablePage(key) {
   const main = $('#main');
   main.innerHTML = `${head(v.title, v.desc, `${key === 'contacts' && canWrite(v) ? '<button class="btn secondary" id="import">Import contacts</button>' : ''}${canWrite(v) && !v.noAdd ? '<button class="btn" id="add">+ Add</button>' : ''}`)}
     <div class="toolbar"><input type="search" id="q" placeholder="Search…" value="${esc(T.q)}">
+      ${v.toggle ? `<label class="inline"><input type="checkbox" id="showall" ${T.showAll?.[key] ? 'checked' : ''}> ${esc(v.toggle.label)}</label>` : ''}
       ${v.soft ? `<label class="inline"><input type="checkbox" id="showdel" ${T.showDeleted ? 'checked' : ''}> Show deleted</label>` : ''}
       <span class="spacer"></span><span class="muted small" id="count"></span><button class="btn secondary sm" id="csv">Export CSV</button></div>
     <div class="card table-wrap" id="tbl"><div class="empty">Loading…</div></div>`;
   $('#q').addEventListener('input', e => { T.q = e.target.value; drawTable(key); });
   $('#showdel')?.addEventListener('change', e => { T.showDeleted = e.target.checked; tablePage(key); });
+  $('#showall')?.addEventListener('change', e => { T.showAll = { ...(T.showAll || {}), [key]: e.target.checked }; drawTable(key); });
   $('#add')?.addEventListener('click', () => editRow(key, null));
   $('#import')?.addEventListener('click', () => importContacts());
   $('#csv').addEventListener('click', () => exportCsv(key));
@@ -694,10 +698,10 @@ async function tablePage(key) {
 function drawTable(key) {
   const v = VIEWS[key]; const cols = v.cols.filter(c => c.table !== false);
   const q = T.q.toLowerCase();
-  let rows = T.rows.filter(r => !q || Object.values(r).some(x => x != null && String(Array.isArray(x) ? x.join(' ') : typeof x === 'object' ? JSON.stringify(x) : x).toLowerCase().includes(q)));
+  let rows = T.rows.filter(r => !v.toggle || T.showAll?.[key] || v.toggle.keep(r)).filter(r => !q || Object.values(r).some(x => x != null && String(Array.isArray(x) ? x.join(' ') : typeof x === 'object' ? JSON.stringify(x) : x).toLowerCase().includes(q)));
   if (T.sort) { const [f, asc] = T.sort; rows.sort((a, b) => { const x = a[f] ?? '', y = b[f] ?? ''; return (x > y ? 1 : x < y ? -1 : 0) * (asc ? 1 : -1); }); }
   $('#count').textContent = `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`;
-  if (!rows.length) { $('#tbl').innerHTML = `<div class="empty">${T.q ? 'No matches.' : 'Nothing here yet.'}</div>`; return; }
+  if (!rows.length) { $('#tbl').innerHTML = `<div class="empty">${T.q ? 'No matches.' : esc(v.empty || 'Nothing here yet.')}</div>`; return; }
   const canEdit = r => canWrite(v) && !v.noEdit && !r.deleted_at && (!v.canEdit || v.canEdit(r));
   $('#tbl').innerHTML = `<table class="data"><thead><tr>${cols.map(c => `<th data-sort="${esc(c.f)}">${esc(c.label)}${T.sort && T.sort[0] === c.f ? (T.sort[1] ? ' ▲' : ' ▼') : ''}</th>`).join('')}<th></th></tr></thead>
     <tbody>${rows.map(r => `<tr class="${r.deleted_at ? 'deleted' : ''}" data-id="${esc(r[v.idField || 'id'] ?? r.org_id)}">${cols.map(c => `<td>${cell(c, r)}</td>`).join('')}
