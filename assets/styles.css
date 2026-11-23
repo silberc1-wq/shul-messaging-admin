@@ -407,3 +407,7 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
   .menu-btn, #side, .subtabs { display: none !important; }
   .table-wrap, .tablewrap { overflow: visible !important; }
 }
+
+.demobar{background:#fff8e8;border-bottom:1px solid #f0dfb4;color:#6b4f12;padding:10px 32px;font-size:14px;line-height:1.5}
+.demobar a{color:#6b4f12;font-weight:600}
+@media (max-width:860px){.demobar{padding:10px 18px}}

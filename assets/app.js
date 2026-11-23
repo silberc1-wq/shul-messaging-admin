@@ -83,7 +83,7 @@ const STATUS = {
   bad: ['FAILED', 'CANCELLED', 'EXPIRED', 'REJECTED', 'REMOVED', 'SUSPENDED', 'NO RECIPIENTS', 'FAIL', 'HIGH', 'OVERDUE', 'REPLACED'],
 };
 const CMD_LABEL = { SEND: 'Text or call', TEXT: 'Text', CALL: 'Call', VOICE: 'Recording', EMERGENCY: 'Emergency', SCHEDULE: 'Scheduled', FLYER: 'Flyer', EMAIL: 'Email', POLL: 'Poll' };
-const cmdPill = (v, r) => { if (!v) return ''; const u = String(v).toUpperCase(); const poll = / Reply 1 for /.test(r?.message || '');
+const cmdPill = (v, r) => { if (!v) return ''; const u = String(v).toUpperCase(); const poll = /(^|\s)Reply 1 for /.test(r?.message || '');
   const lab = u === 'EMERGENCY' ? 'Emergency' : poll ? 'Poll' : r?.media_url && u !== 'VOICE' ? 'Flyer' : CMD_LABEL[u] || v;
   return `<span class="pill ${u === 'EMERGENCY' ? 'bad' : ''}" title="${esc(u)}">${esc(lab)}</span>`; };
 const pill = v => { if (v == null || v === '') return ''; const u = String(v).toUpperCase();
@@ -474,6 +474,7 @@ const TABLE_NAMES = { contacts: 'Contact', controllers: 'Texter', groups: 'Group
   org_compliance: 'Registration', twilio_numbers: 'Phone number' };
 const RESTORABLE = ['contacts', 'controllers', 'groups', 'org_admins', 'scheduled_messages', 'replies', 'signup_requests', 'org_compliance'];
 const HIDE_DIFF = ['updated_at', 'created_at', 'id', 'org_id'];
+const orgNumber = o => o?.is_demo ? (S.demoNumber || '') : o?.twilio_number;
 const orgName = id => S.orgs.find(o => o.id === id)?.name || '';
 const usage = (v, lim) => { if (lim == null) return esc(num(v)); const pct = lim ? Math.min(100, Math.round(v / lim * 100)) : 100;
   return `${esc(num(v))} / ${esc(num(lim))}<div class="bar ${pct >= 100 ? 'bad' : pct >= 80 ? 'warn' : ''}" style="width:120px"><span style="width:${pct}%"></span></div>`; };
@@ -517,7 +518,15 @@ const navAllowed = k => !VIEWS[k]?.needs || S.perms[VIEWS[k].needs];
 const groupOf = k => [...NAV_ORG, ...NAV_PLATFORM].find(x => x.g && x.tabs.some(t => t[0] === k));
 
 const canWrite = v => !v.readOnly && (!v.perm || !!S.perms[v.perm]);
+function renderDemoBar() {
+  const el = $('#demobar'); if (!el) return;
+  if (S.org?.is_demo) {
+    el.innerHTML = `👋 <b>This is a sample account.</b> The members are made up and show sample results. Add your own phone under <a href="#contacts">People → Contacts</a> to get real texts and calls. Everything resets every night.`;
+    el.classList.remove('hidden');
+  } else el.classList.add('hidden');
+}
 function renderNav() {
+  renderDemoBar();
   const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])];
   const cur = groupOf(S.view);
   $('#nav').innerHTML = items.map(it => {
@@ -921,7 +930,7 @@ async function overviewPage() {
   const thisMonth = new Date().toISOString().slice(0, 7);
   const u = (usageRes.data || [])[0]; const used = u && u.month === thisMonth ? Number(u.notifications) : 0;
   const last = (hist.data || [])[0];
-  const phone = esc(fmtPhone(o.twilio_number));
+  const phone = esc(fmtPhone(orgNumber(o)));
   const hr = new Date().getHours();
   const hello = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const ic = d => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -995,6 +1004,7 @@ async function overviewPage() {
           </ul></details></div>
       <div><span class="ov-num">3</span><b>By calling in</b>
         <p>Call <b>${phone}</b> from your phone. Choose the group on the keypad, record your message, listen to it, and press <b>1</b> to send.</p></div>
+      ${o.is_demo ? `<p class="small muted" style="grid-column:1/-1;margin:0">In this sample account, sending by text or by calling in isn't switched on. In your own account it works with your own number.</p>` : ''}
     </div>
 
     <div class="ov-members">
@@ -1051,7 +1061,7 @@ async function settingsPage() {
   const plan = S.plans.find(p => p.id === o.plan_id);
   recordForm({ title: 'Settings', desc: 'How your organization\'s messaging behaves.', cols: SETTINGS_COLS, row: o, table: 'organizations', locked: !S.perms.settings,
     readonly: `<div class="card panel" style="margin-bottom:16px"><div class="kv">
-      <div>Organization number</div><div><b>${esc(fmtPhone(o.twilio_number))}</b></div>
+      <div>Organization number</div><div><b>${esc(fmtPhone(orgNumber(o)))}</b>${o.is_demo ? ' <span class="muted small">(shared sample number)</span>' : ''}</div>
       <div>Plan</div><div>${esc(plan?.name || o.plan || '—')} · ${esc((o.billing_period || '').toLowerCase())}</div>
       <div>Status</div><div>${pill(o.status)}${o.paid_until ? ` · paid until ${esc(fmtD(o.paid_until))}` : ''}</div>
       <div>Limits</div><div>${o.contact_limit ? num(o.contact_limit) + ' contacts' : 'Unlimited contacts'} · ${num(o.notification_limit)} credits/month · ${num(o.voice_minute_limit)} voice minutes</div>
@@ -1996,6 +2006,8 @@ async function startApp(session) {
   const [pa, plans] = await Promise.all([sb.rpc('is_platform_admin'), sb.from('plans').select('*').is('deleted_at', null).order('sort_order')]);
   S.isPlatform = !!pa.data; S.plans = plans.data || [];
   await loadOrgs();
+  if (S.orgs.some(o => o.is_demo)) { const { data } = await sb.rpc('demo_number'); S.demoNumber = data || ''; }
+  if (/^demo@nivolink\.com$/i.test(S.user.email || '')) $$('[data-setpw]').forEach(b => b.classList.add('hidden'));
   if (!S.orgs.length && !S.isPlatform) { show('#login', false); show('#app', false); show('#noaccess', true); return; }
   await Promise.all([loadGroups(), loadPerms()]); await loadBadges();
   show('#login', false); show('#noaccess', false); show('#app', true);
