@@ -411,3 +411,8 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
 .demobar{background:#fff8e8;border-bottom:1px solid #f0dfb4;color:#6b4f12;padding:10px 32px;font-size:14px;line-height:1.5}
 .demobar a{color:#6b4f12;font-weight:600}
 @media (max-width:860px){.demobar{padding:10px 18px}}
+
+.samples{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.sample{display:flex;flex-direction:column;margin:0}
+.sample .btn{align-self:flex-start}
+.chip.on{background:var(--navy,#1d3a6e);color:#fff}

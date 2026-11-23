@@ -56,6 +56,8 @@ const num = n => n == null ? '' : Number(n).toLocaleString();
 document.querySelectorAll('[data-brand]').forEach(el => (el.textContent = cfg.brandName));
 
 function toast(msg, isError) {
+  const nc = /NO_CREDITS:(\d+):(\d+)/.exec(String(msg || ''));
+  if (nc) { creditsModal(+nc[1], +nc[2]); return; }
   const t = $('#toast'); t.textContent = msg; t.className = 'show' + (isError ? ' error' : '');
   clearTimeout(t._h); t._h = setTimeout(() => (t.className = ''), 4000);
 }
@@ -451,6 +453,11 @@ const VIEWS = {
   p_costs: { title: 'Costs', icon: '🧮', table: 'cost_assumptions', scope: 'platform', order: ['item', true], soft: true, platform: true,
     cols: [{ f: 'item', label: 'Item', req: true }, { f: 'value', label: 'Value', type: 'money' }, { f: 'unit', label: 'Unit' }, { f: 'notes', label: 'Notes' }] },
 
+  p_packs: { title: 'Credit packs', icon: '➕', table: 'credit_packs', scope: 'platform', order: ['sort_order', true], platform: true, idField: 'code', noDeletedCol: true,
+    desc: 'Extra credits a customer can buy for the current month. Paste a Stripe Payment Link (one-time price) for each pack. For the "Upgrade my plan" button, put your Stripe customer portal link in System Settings → stripe_portal_url.',
+    cols: [{ f: 'sort_order', label: '#', type: 'number' }, { f: 'code', label: 'Code', req: true }, { f: 'credits', label: 'Credits', type: 'number', req: true },
+      { f: 'price', label: 'Price', type: 'money', req: true }, { f: 'checkout_url', label: 'Payment link', render: v => v ? '✅ set' : '<span class="muted">not set</span>', hint: 'https://buy.stripe.com/…' },
+      { f: 'active', label: 'Offered', type: 'bool' }] },
   p_settings: { title: 'System Settings', icon: '🔧', table: 'app_settings', scope: 'platform', order: ['key', true], platform: true, noAdd: true, idField: 'key',
     desc: 'Connection between the website and n8n. Paste the Production URL of the "Send Now (from website)" node here.',
     cols: [{ f: 'key', label: 'Setting', edit: false }, { f: 'value', label: 'Value', render: (v, r) => r.key === 'dispatch_secret' ? '<span class="muted">•••••• (click Edit to view)</span>' : esc(v) },
@@ -505,15 +512,15 @@ function complianceCols(platform) {
 // The side menu: a few main items; related pages sit together as tabs at the top of the page
 const NAV_ORG = [
   ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'],
-  { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Scheduled'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['pending', 'Waiting for YES']] },
+  { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Scheduled'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['samples', 'Sample messages'], ['pending', 'Waiting for YES']] },
   { g: 'inbox', icon: '📥', label: 'Inbox', tabs: [['replies', 'Replies & voicemails'], ['signup_requests', 'Signup requests'], ['inbound', 'All incoming texts']] },
   { g: 'people', icon: '👥', label: 'People', tabs: [['contacts', 'Contacts'], ['groups', 'Groups'], ['controllers', 'Texters'], ['opt_outs', 'Opted out']] },
-  { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
+  { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['credits', 'Plan & credits'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
 ];
 const NAV_PLATFORM = [['h', 'Platform owner'],
   { g: 'p_cust', icon: '🏛️', label: 'Customers', tabs: [['p_orgs', 'Organizations'], ['p_signups', 'New signups'], ['p_usage', 'Usage'], ['p_invoices', 'Invoices']] },
   { g: 'p_setup', icon: '🧰', label: 'Setup', tabs: [['p_setup', 'Setup tasks'], ['p_compliance', 'Compliance'], ['p_numbers', 'Numbers'], ['p_tests', 'Tests']] },
-  { g: 'p_biz', icon: '💼', label: 'Business', tabs: [['p_plans', 'Plans & pricing'], ['p_leads', 'Leads'], ['p_support', 'Support'], ['p_roadmap', 'Roadmap'], ['p_costs', 'Costs'], ['p_staff', 'Staff'], ['p_settings', 'Platform settings']] }];
+  { g: 'p_biz', icon: '💼', label: 'Business', tabs: [['p_plans', 'Plans & pricing'], ['p_packs', 'Credit packs'], ['p_leads', 'Leads'], ['p_support', 'Support'], ['p_roadmap', 'Roadmap'], ['p_costs', 'Costs'], ['p_staff', 'Staff'], ['p_settings', 'Platform settings']] }];
 const navAllowed = k => !VIEWS[k]?.needs || S.perms[VIEWS[k].needs];
 const groupOf = k => [...NAV_ORG, ...NAV_PLATFORM].find(x => x.g && x.tabs.some(t => t[0] === k));
 
@@ -1015,7 +1022,7 @@ async function overviewPage() {
 
     <div class="ov-foot">
       <span><a href="#contacts">${num(contacts.count || 0)} members</a></span>
-      <span>${num(used)} credits used this month</span>
+      <span><a href="#credits">${num(used)}${o.notification_limit && !o.is_demo ? ' of ' + num(o.notification_limit) : ''} credits used this month</a></span>
       ${last ? `<span>Last announcement: <a href="#history">${last.audio_url ? '🎙️ voice message' : '“' + esc((last.message || '').slice(0, 40)) + ((last.message || '').length > 40 ? '…' : '') + '”'}</a> to ${esc(last.group_name)}, ${esc(fmtD(last.created_at))}</span>` : '<span>No announcements yet</span>'}
     </div>
   </div>`;
@@ -1065,7 +1072,137 @@ async function settingsPage() {
       <div>Plan</div><div>${esc(plan?.name || o.plan || '—')} · ${esc((o.billing_period || '').toLowerCase())}</div>
       <div>Status</div><div>${pill(o.status)}${o.paid_until ? ` · paid until ${esc(fmtD(o.paid_until))}` : ''}</div>
       <div>Limits</div><div>${o.contact_limit ? num(o.contact_limit) + ' contacts' : 'Unlimited contacts'} · ${num(o.notification_limit)} credits/month · ${num(o.voice_minute_limit)} voice minutes</div>
-    </div><p class="small muted" style="margin:10px 0 0">To change your plan or add a phone number, email <a href="mailto:${esc(cfg.supportEmail)}">${esc(cfg.supportEmail)}</a>.</p></div>` });
+    </div><p class="small muted" style="margin:10px 0 0">To change your plan or add credits, open <a href="#credits">Plan &amp; credits</a>. To add a phone number, email <a href="mailto:${esc(cfg.supportEmail)}">${esc(cfg.supportEmail)}</a>.</p></div>` });
+  // logo for emails
+  const card = document.createElement('div'); card.className = 'card panel'; card.style.marginTop = '16px';
+  const draw = () => {
+    card.innerHTML = `<h3 style="margin-top:0">Logo</h3>
+      <p class="small muted" style="margin-top:0">Shown at the top of every announcement email. A PNG or JPG works best, ideally wide and on a white or clear background.</p>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div style="border:1px solid var(--line);border-radius:12px;padding:14px;min-width:200px;text-align:center;background:#fff">
+          ${o.logo_url ? `<img src="${esc(o.logo_url)}" alt="Logo" style="max-height:70px;max-width:240px">` : '<span class="muted small">No logo yet</span>'}
+          <div style="margin-top:6px;font-weight:700;color:#1e3a64">${esc(o.name)}</div></div>
+        ${S.perms.settings ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><label class="btn secondary" style="cursor:pointer">${o.logo_url ? 'Change logo' : '⬆️ Upload logo'}
+          <input type="file" id="logofile" accept="image/png,image/jpeg,image/gif" hidden></label>
+          ${o.logo_url ? '<button type="button" class="btn ghost" id="logorm">Remove</button>' : ''}</div>` : ''}
+      </div>`;
+    $('#logofile', card)?.addEventListener('change', async e => {
+      const file = e.target.files[0]; if (!file) return;
+      if (!/^image\/(png|jpeg|gif)$/.test(file.type)) return toast('Please choose a PNG, JPG or GIF picture.', true);
+      if (file.size > 2 * 1024 * 1024) return toast('That picture is too big. Please use one under 2 MB.', true);
+      const path = `${o.id}/logo-${Date.now()}.${file.type === 'image/png' ? 'png' : file.type === 'image/gif' ? 'gif' : 'jpg'}`;
+      const up = await sb.storage.from('flyers').upload(path, file, { contentType: file.type, upsert: false });
+      if (up.error) return toast('Upload failed: ' + up.error.message, true);
+      o.logo_url = sb.storage.from('flyers').getPublicUrl(path).data.publicUrl;
+      check(await sb.from('organizations').update({ logo_url: o.logo_url }).eq('id', o.id), 'Logo saved. It will show on the next email.');
+      draw();
+    });
+    $('#logorm', card)?.addEventListener('click', async () => {
+      o.logo_url = null; check(await sb.from('organizations').update({ logo_url: null }).eq('id', o.id), 'Logo removed'); draw();
+    });
+  };
+  draw(); $('#main').appendChild(card);
+}
+
+/* ---------- sample messages ---------- */
+const SAMPLES = [
+  ['Reminders', '📅', 'Event reminder', 'PREF', 'Reminder: our community dinner is tomorrow at 7 PM in the main hall. See you there!'],
+  ['Reminders', '📅', 'Personal reminder', 'TEXT', 'Hi {name}, just a reminder that the meeting is tonight at 8 PM. Reply if you can\'t make it.'],
+  ['Reminders', '📅', 'RSVP deadline', 'PREF', 'Last day to sign up for Sunday\'s brunch! Reply YES with how many people are coming.'],
+  ['Changes', '🔄', 'Time change', 'PREF', 'Please note: tonight\'s program starts at 8:00 PM instead of 7:30 PM.'],
+  ['Changes', '🔄', 'Location change', 'PREF', 'Change of location: today\'s class will be in Room 3 downstairs.'],
+  ['Changes', '🔄', 'Cancelled', 'PREF', 'Tonight\'s event is cancelled. We\'ll let you know the new date soon. Sorry for the inconvenience.'],
+  ['Emergency', '🚨', 'Snow closing', 'EMERGENCY', 'Because of the snowstorm, the building is closed today. All programs are cancelled. Stay safe!'],
+  ['Emergency', '🚨', 'Power outage', 'EMERGENCY', 'We have a power outage. The building is closed until further notice. We will update you as soon as we know more.'],
+  ['Emergency', '🚨', 'Road closed', 'EMERGENCY', 'Heads up: the main road in front of the building is closed. Please use the back entrance on the side street.'],
+  ['Events', '🎉', 'New event', 'PREF', 'Save the date! Our annual dinner is on Sunday, March 8 at 6 PM. More details soon.'],
+  ['Events', '🎉', 'Kids program', 'PREF', 'Kids program this Sunday at 10 AM: crafts, games and snacks. Ages 4 to 10. Free!'],
+  ['Volunteers', '🙋', 'Need volunteers', 'TEXT', 'We need 5 volunteers this Sunday from 9 to 11 AM to set up. Reply if you can help. Thank you!'],
+  ['Volunteers', '🙋', 'Thank you', 'TEXT', 'Thank you {name} for volunteering this week! We couldn\'t do it without you.'],
+  ['Polls', '📊', 'Pick a date', 'POLL', 'Which day works best for the next event?', ['Sunday', 'Monday', 'Tuesday']],
+  ['Polls', '📊', 'Will you come?', 'POLL', 'Are you coming to the dinner on Sunday?', ['Yes', 'No', 'Maybe']],
+  ['Polls', '📊', 'Food choice', 'POLL', 'What would you like for the dinner?', ['Chicken', 'Fish', 'Vegetarian']],
+  ['Members', '👋', 'Welcome', 'TEXT', 'Welcome {name}! You\'ll now get our announcements here. Reply STOP anytime to opt out.'],
+  ['Members', '💳', 'Dues reminder', 'TEXT', 'Hi {name}, a friendly reminder that yearly dues are due by the end of the month. Thank you for your support!'],
+  ['Members', '📎', 'Flyer', 'FLYER', 'Please see the attached flyer for this week\'s schedule.'],
+  ['Shul', '🕯️', 'Shabbos times', 'PREF', 'Shabbos Parshas {parsha}\nCandle lighting {candles}\nMincha {shkia_friday-10}\nShabbos ends {havdalah}\nGood Shabbos!', null, true],
+  ['Shul', '🕯️', 'שבת זמנים (Hebrew)', 'PREF', '{parsha_hebrew}\nהדלקת נרות {candles}\nמנחה {shkia_friday-10}\nמוצאי שבת {havdalah}\nגוט שבת!', null, true],
+  ['Shul', '🙏', 'Mincha time', 'TEXT', 'Mincha today at {shkia-15}, Maariv at {tzeis}.', null, true],
+  ['Shul', '🎉', 'Mazel tov', 'PREF', 'Mazel tov to the Cohen family on the birth of a baby boy! Kiddush this Shabbos after davening.', null, true],
+  ['Shul', '😢', 'Levaya', 'PREF', 'With great sadness we announce the passing of _____. The levaya will be at _____. Shiva at _____. Hamakom yenachem.', null, true],
+  ['Shul', '📖', 'Shiur', 'PREF', 'The weekly shiur is tonight at 8:30 PM. Everyone is welcome!', null, true],
+];
+function samplesPage() {
+  const list = SAMPLES.filter(x => JEW() || !x[6]);
+  const cats = [...new Set(list.map(x => x[0]))];
+  $('#main').innerHTML = head('Sample messages', 'Ready-made messages to start from. Press "Use this" and it opens on Send Message, where you can change it, choose the group, and send now or schedule it.')
+    + `<div class="toolbar" style="margin-bottom:14px;flex-wrap:wrap;gap:6px">${['All', ...cats].map((c, i) => `<button type="button" class="chip${i ? '' : ' on'}" data-cat="${esc(c)}">${esc(c === 'Shul' ? 'Shul' : c)}</button>`).join('')}</div>
+      <div class="samples">${list.map((x, i) => `<div class="card panel sample" data-c="${esc(x[0])}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${x[1]} ${esc(x[2])}</b>
+          <span class="pill">${x[3] === 'POLL' ? 'Poll' : x[3] === 'EMERGENCY' ? 'Emergency' : x[3] === 'TEXT' ? 'Text' : x[3] === 'FLYER' ? 'Flyer' : 'Text or call'}</span></div>
+        <div class="small" ${/[֐-׿]/.test(x[4]) ? 'dir="rtl"' : ''} style="white-space:pre-wrap;background:var(--cream, #f7f4ee);padding:10px 12px;border-radius:10px;margin:10px 0;flex:1">${esc(x[4])}${x[5] ? '\n' + x[5].map((o, k) => `Reply ${k + 1} for ${o}`).join('\n') : ''}</div>
+        <button type="button" class="btn sm" data-use="${SAMPLES.indexOf(x)}">Use this</button></div>`).join('')}</div>`;
+  $$('[data-cat]').forEach(b => b.addEventListener('click', () => {
+    $$('[data-cat]').forEach(x => x.classList.toggle('on', x === b));
+    $$('.sample').forEach(c => c.classList.toggle('hidden', b.dataset.cat !== 'All' && c.dataset.c !== b.dataset.cat));
+  }));
+  $$('[data-use]').forEach(b => b.addEventListener('click', () => {
+    const x = SAMPLES[+b.dataset.use];
+    const payload = { message: x[4], group: 'ALL', mode: x[3] === 'POLL' || x[3] === 'FLYER' ? 'TEXT' : x[3], poll: x[5] || null };
+    try { sessionStorage.setItem('cc_reuse', JSON.stringify(payload)); } catch {}
+    go('send');
+  }));
+}
+
+/* ---------- credits ---------- */
+async function creditsInfo() { const { data } = await sb.rpc('credits_status', { p_org: S.org.id }); return data || {}; }
+function creditChoices(c) {
+  const packs = (c.packs || []).map(k => `<button type="button" class="btn secondary" data-pack="${esc(k.code)}" style="justify-content:space-between;width:100%;margin:0 0 8px">
+      <span>➕ <b>${num(k.credits)} extra credits</b> <span class="muted small">for the rest of this month</span></span><b>$${num(k.price)}</b></button>`).join('');
+  return `<div style="margin:6px 0 4px"><b>Add credits for this month</b></div>${packs}
+    <div style="margin:14px 0 4px"><b>Or move up a plan</b> <span class="muted small">(more credits every month)</span></div>
+    <button type="button" class="btn" data-upgrade style="width:100%">⬆️ Upgrade my plan</button>`;
+}
+function wireCreditChoices(root, c, after) {
+  $$('[data-pack]', root).forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { data, error } = await sb.rpc('start_credit_purchase', { p_org: S.org.id, p_pack: b.dataset.pack });
+    b.disabled = false;
+    if (error) return toast(friendlyError(error), true);
+    window.open(data, '_blank', 'noopener'); after && after();
+    toast('Finish the payment in the new tab. The credits are added as soon as it goes through.');
+  }));
+  $$('[data-upgrade]', root).forEach(b => b.addEventListener('click', () => {
+    if (c.portal) { const u = new URL(c.portal); if (S.user?.email) u.searchParams.set('prefilled_email', S.user.email); window.open(u.toString(), '_blank', 'noopener'); }
+    else location.href = 'mailto:hello@nivolink.com?subject=' + encodeURIComponent('Upgrade plan for ' + (S.org?.name || ''));
+    after && after();
+  }));
+}
+async function creditsModal(need, left, overAfterEmergency = false) {
+  const c = await creditsInfo();
+  const close = modal(overAfterEmergency ? 'You went over your credits' : 'Not enough credits',
+    `<p style="margin-top:0">${overAfterEmergency
+      ? `The emergency message went out. It used more credits than you had left, so please add credits or upgrade.`
+      : `This message needs <b>${num(need)}</b> credits and you have <b>${num(left)}</b> left this month. Nothing was sent.`}</p>
+     <p class="small muted">Plan: ${esc(c.plan_name || '')} · ${num(c.plan || 0)} credits a month${c.extra ? ` + ${num(c.extra)} extra` : ''} · ${num(c.used || 0)} used</p>
+     ${creditChoices(c)}`, {});
+  const root = $$('.modal-back').pop(); wireCreditChoices(root, c, () => root.remove());
+  return close;
+}
+async function creditsPage() {
+  $('#main').innerHTML = head('Plan & credits', 'Every text, picture text and phone call uses credits. Email is free. Credits start fresh on the 1st of each month.') + '<div class="card panel">Loading…</div>';
+  const c = await creditsInfo();
+  if (c.demo || c.left == null) { $('#main .panel').innerHTML = 'This account has unlimited credits.'; return; }
+  const total = (c.plan || 0) + (c.extra || 0), pct = total ? Math.min(100, Math.round((c.used || 0) * 100 / total)) : 0;
+  const { data: buys } = await sb.from('credit_purchases').select('*').eq('org_id', S.org.id).eq('status', 'PAID').order('paid_at', { ascending: false }).limit(12);
+  $('#main .panel').outerHTML = `<div class="card panel" style="max-width:720px">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><b>${esc(c.plan_name || 'Your plan')}</b><span>${num(c.used)} of ${num(total)} credits used this month</span></div>
+      <div style="height:12px;background:var(--line);border-radius:8px;margin:10px 0;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct >= 90 ? 'var(--red, #c0392b)' : 'var(--navy, #1d3a6e)'}"></div></div>
+      <p class="small muted" style="margin:0">${num(c.plan)} from your plan${c.extra ? ` + ${num(c.extra)} extra you added` : ''} · <b>${num(Math.max(c.left, 0))} left</b>. Before anything goes out, the system checks there are enough credits. Emergencies always go out.</p>
+    </div>
+    <div class="card panel" style="max-width:720px;margin-top:16px">${creditChoices(c)}</div>
+    ${(buys || []).length ? `<div class="card panel" style="max-width:720px;margin-top:16px"><b>Credits you bought</b><ul class="small" style="margin:8px 0 0">${buys.map(b => `<li>${esc(fmtDT(b.paid_at))}: ${num(b.credits)} credits${b.amount_paid != null ? ' · $' + num(b.amount_paid) : ''}</li>`).join('')}</ul></div>` : ''}`;
+  wireCreditChoices($('#main'), c);
 }
 
 async function registrationPage() {
@@ -1213,7 +1350,7 @@ async function deliveryReport(h) {
 /* ----- repeating messages (weekly zmanim etc.) ----- */
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const ZMAN_TAGS = [
-  ['Shabbos', [['{parsha}', 'Parsha'], ['{candles}', 'Candle lighting'], ['{shkia_friday}', 'Shkia Friday'], ['{shma_shabbos}', 'Sof zman shma Shabbos (GRA)'],
+  ['Shabbos', [['{parsha}', 'Parsha'], ['{parsha_he}', 'Parsha in Hebrew (וישלח)'], ['{parsha_hebrew}', 'פרשת + Parsha in Hebrew'], ['{candles}', 'Candle lighting'], ['{shkia_friday}', 'Shkia Friday'], ['{shma_shabbos}', 'Sof zman shma Shabbos (GRA)'],
     ['{shma_mga_shabbos}', 'Shma Shabbos (MGA)'], ['{shkia_shabbos}', 'Shkia Shabbos'], ['{havdalah}', 'Havdalah'], ['{shabbos_date}', 'Shabbos date']]],
   ['Today', [['{alos}', 'Alos'], ['{sunrise}', 'Netz'], ['{shma}', 'Shma (GRA)'], ['{shma_mga}', 'Shma (MGA)'], ['{tefila}', 'Tefila'], ['{chatzos}', 'Chatzos'],
     ['{mincha_gedola}', 'Mincha gedola'], ['{plag}', 'Plag'], ['{shkia}', 'Shkia'], ['{tzeis}', 'Tzeis'], ['{date}', 'Date']]],
@@ -1846,6 +1983,8 @@ async function sendPage() {
     const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = textOnly ? 0 : reach.calls;
     const when = later() ? sendAt() : null;
     if (later() && (!when || when < new Date(Date.now() - 60e3))) return toast('Pick a date and time in the future for the scheduled message.', true);
+    const needNow = reach.sms * (asPicture() ? 3 : i.segments) + callsOut, cs = await creditsInfo();
+    if (cs.left != null && needNow > cs.left && mode !== 'EMERGENCY') return creditsModal(needNow, Math.max(cs.left, 0));
     const whenLine = when ? `<div style="margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--sky-soft)">⏰ Goes out <b>${esc(fmtDT(when.toISOString()))}</b>${JEW() && hebDate(asDayUTC(when.toISOString())) ? ' · ' + esc(hebDate(asDayUTC(when.toISOString()))) : ''}</div>` : '';
     const ok = await confirmBox(when ? (poll ? '📊 Schedule this poll?' : '⏰ Schedule this message?') : poll ? '📊 Send this poll?' : mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
       whenLine +
@@ -1866,6 +2005,7 @@ async function sendPage() {
       p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media, p_when: when ? when.toISOString() : null });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
+    if (mode === 'EMERGENCY' && cs.left != null && needNow > cs.left) setTimeout(() => creditsModal(needNow, Math.max(cs.left, 0), true), 1500);
     toast(when ? `Scheduled for ${fmtDT(when.toISOString())}. It's waiting under Messages → Scheduled.` : poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
     f.msg.value = ''; flyer = null; showFlyer();
     if (when) { f.querySelector('input[name=when][value=now]').checked = true; f.sendat.value = ''; syncWhen(); loadReach(); }
@@ -1940,7 +2080,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   $$('[data-hebpref]').forEach(b => b.classList.toggle('hidden', !JEW()));
@@ -1960,6 +2100,8 @@ async function render() {
   if (S.view === 'polls') return pollsPage();
   if (S.view === 'repeating') return repeatingPage();
   if (S.view === 'registration') return registrationPage();
+  if (S.view === 'credits') return creditsPage();
+  if (S.view === 'samples') return samplesPage();
   return tablePage(S.view);
 }
 
