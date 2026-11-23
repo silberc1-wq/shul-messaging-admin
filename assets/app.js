@@ -240,7 +240,7 @@ const VIEWS = {
     rowActions: r => r.status === 'PENDING CONFIRMATION' ? [{ label: 'Cancel', danger: true, run: async () => {
       check(await sb.from('pending_messages').update({ status: 'CANCELLED', confirmed_at: new Date().toISOString() }).eq('id', r.id), 'Cancelled'); } }] : [] },
 
-  scheduled: { title: 'Schedule', addTitle: 'Schedule a message', perm: 'send', icon: '⏰', table: 'scheduled_messages', scope: 'org', order: ['scheduled_for', false], soft: true,
+  scheduled: { title: 'Scheduled', addTitle: 'Schedule a message', perm: 'send', icon: '⏰', table: 'scheduled_messages', scope: 'org', order: ['scheduled_for', false], soft: true,
     desc: 'Messages waiting to go out at a set time (checked every 5 minutes). Once sent, they move to History.',
     toggle: { label: 'Show already sent', keep: r => r.status === 'SCHEDULED' }, canEdit: r => r.status === 'SCHEDULED',
     rowActions: r => [{ label: '↻ Use again', run: () => reuseMessage(r) }],
@@ -495,7 +495,7 @@ function complianceCols(platform) {
 // The side menu: a few main items; related pages sit together as tabs at the top of the page
 const NAV_ORG = [
   ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'],
-  { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Schedule'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['pending', 'Waiting for YES']] },
+  { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Scheduled'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['pending', 'Waiting for YES']] },
   { g: 'inbox', icon: '📥', label: 'Inbox', tabs: [['replies', 'Replies & voicemails'], ['signup_requests', 'Signup requests'], ['inbound', 'All incoming texts']] },
   { g: 'people', icon: '👥', label: 'People', tabs: [['contacts', 'Contacts'], ['groups', 'Groups'], ['controllers', 'Texters'], ['opt_outs', 'Opted out']] },
   { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
@@ -1427,7 +1427,7 @@ async function sendPage() {
     main.innerHTML = head('Send Message') + `<div class="card panel"><p>You don't have permission to send messages from the website.</p>
       <p class="muted">Ask an owner to turn on <b>Can send from website</b> for you on the Website Admins page.</p></div>`; return;
   }
-  main.innerHTML = head('Send Message', 'Send an announcement right now. Texts and calls go out within seconds.') + `
+  main.innerHTML = head('Send Message', 'Send an announcement now, or schedule it for later. Texts and calls go out within seconds.') + `
   <div class="two">
     <form class="card panel" id="sendf" novalidate>
       <div class="grid2">
@@ -1475,6 +1475,10 @@ async function sendPage() {
             <label id="flyeropt" class="hidden" style="display:flex;gap:6px;align-items:center;font-size:13px;font-weight:500"><input type="checkbox" id="flyerconv" checked> Send as a picture (recommended)</label>
             <a class="btn secondary sm" id="flyerdl" download="flyer.jpg">⬇ Download JPG</a>
             <button type="button" class="btn ghost sm" id="flyerrm">Remove</button></div></div></div>
+      <div class="field" id="whenbox"><label>When</label>
+        <div class="groups-pick"><label><input type="radio" name="when" value="now" checked> ⚡ Send now</label><label><input type="radio" name="when" value="later"> ⏰ Schedule for later</label></div>
+        <div id="laterbox" class="hidden" style="margin-top:10px;max-width:360px"><input type="datetime-local" name="sendat">
+          <div class="hint">It goes out within 5 minutes of this time. Until then it waits under <b>Messages → Scheduled</b>, where you can change or delete it.</div></div></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="muted small">${o.confirmation_required ? 'You\'ll confirm before it goes out.' : ''}</span>
         <button class="btn gold" type="submit" id="sendbtn">Review & send</button></div>
@@ -1488,6 +1492,17 @@ async function sendPage() {
     </div>
   </div>`;
   const f = $('#sendf'); let reach = null;
+  // ---- send now, or schedule for later ----
+  const later = () => f.querySelector('input[name=when]:checked')?.value === 'later';
+  const sendAt = () => { const v = f.sendat.value; const d = v ? new Date(v) : null; return d && !isNaN(d) ? d : null; };
+  const sendDay = () => later() && f.sendat.value ? f.sendat.value.slice(0, 10) : null;
+  const syncWhen = () => {
+    $('#laterbox').classList.toggle('hidden', !later());
+    if (later() && !f.sendat.value) { const d = new Date(Date.now() + 3600e3); d.setMinutes(0, 0, 0); f.sendat.value = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); f.sendat.dispatchEvent(new Event('change')); }
+    $('#sendbtn').textContent = later() ? 'Review & schedule' : 'Review & send';
+  };
+  f.querySelectorAll('input[name=when]').forEach(r => r.addEventListener('change', () => { syncWhen(); loadReach(); zload(); }));
+  f.sendat.addEventListener('change', () => zload());
   // ---- {candles}, {shkia}… filled in for today, for the counter and preview ----
   let zc = { src: null, out: null }, zt;
   const zf = t => hasZTags(t) && zc.src === t ? zc.out : t;
@@ -1495,7 +1510,7 @@ async function sendPage() {
     const t = f.msg.value; if (!hasZTags(t)) { zc = { src: null, out: null }; if ($('#zwarn')) $('#zwarn').textContent = ''; return; }
     clearTimeout(zt); zt = setTimeout(async () => {
       // keep {name} as is (each person gets their own); fill only the times
-      const { data } = await sb.rpc('preview_recurring', { p_org: o.id, p_message: t.replace(/\{(name|first|fullname)\}/g, '\u0001$1\u0002') });
+      const { data } = await sb.rpc('preview_recurring', { p_org: o.id, p_message: t.replace(/\{(name|first|fullname)\}/g, '\u0001$1\u0002'), p_date: sendDay() });
       if (!data || f.msg.value !== t) return;
       zc = { src: t, out: data.message.replace(/\u0001(\w+)\u0002/g, '{$1}'), missing: data.missing || [] };
       const w = $('#zwarn'); if (w) w.textContent = !data.zip ? 'Set your location under Messages → Repeating → ⚙ Zmanim settings to fill in times.' : data.missing.length ? (data.loaded ? 'Unknown: ' + data.missing.map(m => '{' + m + '}').join(' ') : 'Loading times… one moment.') : '';
@@ -1725,7 +1740,7 @@ async function sendPage() {
   f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || (!pollOn() && f.vdnd.checked) });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || later() || (!pollOn() && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
   try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
@@ -1794,9 +1809,13 @@ async function sendPage() {
     if (flyerOnly && !reach.sms && !reach.email) return toast('Everyone in this group gets calls, and a flyer can\'t be heard. Type a message to call them.', true);
     if (poll && !reach.sms) return toast('Nobody in this group gets texts, so nobody could answer the poll.', true);
     const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = textOnly ? 0 : reach.calls;
-    const ok = await confirmBox(poll ? '📊 Send this poll?' : mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
+    const when = later() ? sendAt() : null;
+    if (later() && (!when || when < new Date(Date.now() - 60e3))) return toast('Pick a date and time in the future for the scheduled message.', true);
+    const whenLine = when ? `<div style="margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--sky-soft)">⏰ Goes out <b>${esc(fmtDT(when.toISOString()))}</b>${JEW() && hebDate(asDayUTC(when.toISOString())) ? ' · ' + esc(hebDate(asDayUTC(when.toISOString()))) : ''}</div>` : '';
+    const ok = await confirmBox(when ? (poll ? '📊 Schedule this poll?' : '⏰ Schedule this message?') : poll ? '📊 Send this poll?' : mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
+      whenLine +
       `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''}${!poll && ['PREF', 'EMERGENCY'].includes(mode) && reach.email ? ` + ${num(reach.email)} emails` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + callsOut)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
-       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, 'Send now', false);
+       <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, when ? 'Schedule' : 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
     let up;
@@ -1804,16 +1823,17 @@ async function sendPage() {
     const msgOut = t;
     let pollId = null;
     if (poll) {
-      const pr = await sb.rpc('create_poll', { p_org: o.id, p_question: question, p_options: pollOpts(), p_group: f.group.value, p_days: +$('#polldays').value });
+      const pr = await sb.rpc('create_poll', { p_org: o.id, p_question: question, p_options: pollOpts(), p_group: f.group.value, p_days: +$('#polldays').value + (when ? Math.ceil((when - Date.now()) / 864e5) : 0) });
       if (pr.error) { $('#sendbtn').disabled = false; return toast(pr.error.message, true); }
       pollId = pr.data;
     }
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media });
+      p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media, p_when: when ? when.toISOString() : null });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
-    toast(poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
+    toast(when ? `Scheduled for ${fmtDT(when.toISOString())}. It's waiting under Messages → Scheduled.` : poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
     f.msg.value = ''; flyer = null; showFlyer();
+    if (when) { f.querySelector('input[name=when][value=now]').checked = true; f.sendat.value = ''; syncWhen(); loadReach(); }
     if (poll) { $('#pollon').checked = false; $('#pollopts').classList.add('hidden'); $('#pollanswers').innerHTML = ''; pollRow(); pollRow(); loadReach(); }
   });
   async function sendVoice() {
@@ -1822,9 +1842,11 @@ async function sendPage() {
     if (!file && !link) return toast(vsrc() === 'rec' ? 'Record your message first.' : vsrc() === 'file' ? 'Choose a recording to upload.' : 'Paste the link to the recording.', true);
     if (link && !/^https:\/\/\S+$/.test(link)) return toast('The link must start with https://', true);
     if (!reach || !reach.calls) return toast(reach?.skipped_dnd ? 'It\'s quiet hours: check "call everyone anyway" to send now.' : 'Nobody in this group would receive a call', true);
-    const ok = await confirmBox('Send this voice recording?',
-      `<b>${esc(f.group.value)}</b> · ${num(reach.calls)} phone calls<br><br>Each person hears "This is a message from ${esc(o.name)}", then the recording twice.
-       <br><br><b>Listen before sending:</b><audio controls src="${esc(vPreview() || '')}" style="width:100%;margin-top:8px"></audio>`, 'Call everyone now', false);
+    const when = later() ? sendAt() : null;
+    if (later() && (!when || when < new Date(Date.now() - 60e3))) return toast('Pick a date and time in the future for the scheduled message.', true);
+    const ok = await confirmBox(when ? '⏰ Schedule this voice recording?' : 'Send this voice recording?',
+      (when ? `<div style="margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--sky-soft)">⏰ Calls go out <b>${esc(fmtDT(when.toISOString()))}</b></div>` : '') + `<b>${esc(f.group.value)}</b> · ${num(reach.calls)} phone calls<br><br>Each person hears "This is a message from ${esc(o.name)}", then the recording twice.
+       <br><br><b>Listen before sending:</b><audio controls src="${esc(vPreview() || '')}" style="width:100%;margin-top:8px"></audio>`, when ? 'Schedule' : 'Call everyone now', false);
     if (!ok) return;
     const btn = $('#sendbtn'); btn.disabled = true; btn.textContent = file ? 'Uploading…' : 'Sending…';
     try {
@@ -1836,13 +1858,14 @@ async function sendPage() {
         if (up.error) return toast('Upload failed: ' + up.error.message, true);
         url = sb.storage.from('recordings').getPublicUrl(path).data.publicUrl;
       }
-      const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: f.msg.value.trim(), p_mode: 'CALL', p_emergency: f.vdnd.checked, p_audio_url: url });
+      const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: f.msg.value.trim(), p_mode: 'CALL', p_emergency: f.vdnd.checked, p_audio_url: url, p_when: when ? when.toISOString() : null });
       if (res.error) return toast(res.error.message, true);
-      toast('Calling now. It will appear in History in a moment.');
+      toast(when ? `Scheduled for ${fmtDT(when.toISOString())}. It's waiting under Messages → Scheduled.` : 'Calling now. It will appear in History in a moment.');
+      if (when) { f.querySelector('input[name=when][value=now]').checked = true; f.sendat.value = ''; }
       f.msg.value = ''; f.vfile.value = ''; f.vurl.value = ''; if (vObjUrl) URL.revokeObjectURL(vObjUrl); vObjUrl = null;
       if (vRecUrl) URL.revokeObjectURL(vRecUrl); vRecUrl = null; vRecFile = null; recBtn.textContent = '● Start recording';
       recTime.textContent = 'Uses your computer\'s microphone. Up to 3 minutes.'; showPlayer(null); draw();
-    } finally { btn.disabled = false; btn.textContent = 'Review & send'; }
+    } finally { btn.disabled = false; syncWhen(); }
   }
 }
 
