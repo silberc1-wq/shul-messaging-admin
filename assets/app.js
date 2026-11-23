@@ -748,7 +748,68 @@ function editRow(key, row) {
     };
     ['address_street', 'address_city', 'address_state', 'address_zip'].forEach(n => form[n].addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 700); }));
     draw();
+    addressSuggest(form, draw);
   }
+}
+// ---------- address suggestions while typing (Photon / OpenStreetMap, free, no key) ----------
+const US_STATES = { Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA', Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', 'District of Columbia': 'DC',
+  Florida: 'FL', Georgia: 'GA', Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA', Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD',
+  Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO', Montana: 'MT', Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+  'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH', Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI',
+  'South Carolina': 'SC', 'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT', Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY' };
+let _addrBias;
+async function addrBias() { // search near the organization (its zmanim location), if known
+  if (_addrBias !== undefined) return _addrBias;
+  try { const { data } = await sb.from('zmanim_cache').select('zmanim').eq('org_id', S.org.id).maybeSingle(); const l = data?.zmanim?.location;
+    _addrBias = l?.latitude ? `&lat=${l.latitude}&lon=${l.longitude}` : ''; } catch { _addrBias = ''; }
+  return _addrBias;
+}
+function addressSuggest(form, onPick) {
+  const inp = form.address_street; if (!inp) return;
+  inp.setAttribute('autocomplete', 'off'); inp.setAttribute('autocorrect', 'off'); inp.setAttribute('spellcheck', 'false');
+  inp.setAttribute('placeholder', 'Start typing, e.g. 12 Main St, Monsey');
+  const box = document.createElement('div'); box.className = 'addr-sug hidden'; inp.parentNode.style.position = 'relative'; inp.after(box);
+  let t, list = [], at = -1, seq = 0;
+  const close = () => { box.classList.add('hidden'); at = -1; };
+  const pick = i => {
+    const a = list[i]; if (!a) return;
+    form.address_street.value = a.street; if (a.city) form.address_city.value = a.city; if (a.state) form.address_state.value = a.state; if (a.zip) form.address_zip.value = a.zip;
+    close(); onPick && onPick(); form.address_city.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const show = () => {
+    if (!list.length) return close();
+    box.innerHTML = list.map((a, i) => `<button type="button" data-i="${i}" class="${i === at ? 'on' : ''}"><b>${esc(a.street)}</b><span>${esc([a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</span></button>`).join('')
+      + '<div class="addr-src">Addresses from OpenStreetMap</div>';
+    box.classList.remove('hidden');
+  };
+  const search = async () => {
+    const q = inp.value.trim(); if (q.length < 4) return close();
+    const my = ++seq;
+    try {
+      const res = await fetch(`https://photon.komoot.io/api/?limit=8&lang=en&q=${encodeURIComponent(q)}${await addrBias()}`);
+      if (my !== seq) return; const j = await res.json();
+      const typedNo = (q.match(/^\s*(\d+[a-zA-Z]?)\b/) || [])[1];
+      const seen = new Set();
+      list = (j.features || []).map(f => f.properties || {}).filter(p => p.countrycode === 'US' && (p.street || p.housenumber || p.osm_key === 'highway'))
+        .map(p => {
+          const road = p.street || (p.osm_key === 'highway' ? p.name : '');
+          const no = p.housenumber || typedNo || '';
+          return { street: [no, road].filter(Boolean).join(' '), city: p.city || p.town || p.village || p.locality || p.district || '', state: US_STATES[p.state] || p.state || '', zip: (p.postcode || '').slice(0, 5) };
+        })
+        .filter(a => a.street && !seen.has(a.street + a.city) && seen.add(a.street + a.city)).slice(0, 6);
+      at = -1; show();
+    } catch { close(); }
+  };
+  inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(search, 350); });
+  inp.addEventListener('keydown', e => {
+    if (box.classList.contains('hidden')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); at = Math.min(list.length - 1, at + 1); show(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); at = Math.max(0, at - 1); show(); }
+    else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); pick(at); }
+    else if (e.key === 'Escape') { e.stopPropagation(); close(); }
+  });
+  box.addEventListener('mousedown', e => { const b = e.target.closest('[data-i]'); if (b) { e.preventDefault(); pick(+b.dataset.i); } });
+  inp.addEventListener('blur', () => setTimeout(close, 150));
 }
 const addrLine = r => [r.address_street, r.address_city, [r.address_state, r.address_zip].filter(Boolean).join(' ')].map(x => (x || '').trim()).filter(Boolean).join(', ');
 const mapsUrl = r => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addrLine(r));
