@@ -82,6 +82,10 @@ const STATUS = {
     'NOT STARTED', 'SUBMITTED', 'BRAND APPROVED', 'AWAITING PAYMENT', 'HOT', 'NEXT', 'BUILD', 'MEDIUM'],
   bad: ['FAILED', 'CANCELLED', 'EXPIRED', 'REJECTED', 'REMOVED', 'SUSPENDED', 'NO RECIPIENTS', 'FAIL', 'HIGH', 'OVERDUE', 'REPLACED'],
 };
+const CMD_LABEL = { SEND: 'Text or call', TEXT: 'Text', CALL: 'Call', VOICE: 'Recording', EMERGENCY: 'Emergency', SCHEDULE: 'Scheduled', FLYER: 'Flyer', EMAIL: 'Email', POLL: 'Poll' };
+const cmdPill = (v, r) => { if (!v) return ''; const u = String(v).toUpperCase(); const poll = / Reply 1 for /.test(r?.message || '');
+  const lab = u === 'EMERGENCY' ? 'Emergency' : poll ? 'Poll' : r?.media_url && u !== 'VOICE' ? 'Flyer' : CMD_LABEL[u] || v;
+  return `<span class="pill ${u === 'EMERGENCY' ? 'bad' : ''}" title="${esc(u)}">${esc(lab)}</span>`; };
 const pill = v => { if (v == null || v === '') return ''; const u = String(v).toUpperCase();
   const c = STATUS.ok.includes(u) ? 'ok' : STATUS.warn.includes(u) ? 'warn' : STATUS.bad.includes(u) ? 'bad' : ''; return `<span class="pill ${c}">${esc(v)}</span>`; };
 
@@ -230,11 +234,11 @@ const VIEWS = {
       { f: 'active', label: 'Active', type: 'bool' }, { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ], defaults: { role: 'GROUP ADMIN', active: true } },
 
-  pending: { title: 'Pending', perm: 'send', icon: '⏳', table: 'pending_messages', scope: 'org', order: ['created_at', false], soft: true, noAdd: true, noEdit: true,
-    desc: 'Commands waiting for a YES, plus everything confirmed or cancelled.',
+  pending: { title: 'Waiting for YES', perm: 'send', icon: '⏳', table: 'pending_messages', scope: 'org', order: ['created_at', false], soft: true, noAdd: true, noEdit: true,
+    desc: 'Messages texted in from a phone wait here until the sender replies YES. Confirmed and cancelled ones stay listed.',
     cols: [
-      { f: 'created_at', label: 'Received', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Command', type: 'status' },
-      { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext' },
+      { f: 'created_at', label: 'Received', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
+      { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` }, { f: 'message', label: 'Message', type: 'longtext', render: v => `<div class="small" style="min-width:160px;max-width:260px">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>` },
       { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: 'status', label: 'Status', type: 'status' },
     ],
     rowActions: r => r.status === 'PENDING CONFIRMATION' ? [{ label: 'Cancel', danger: true, run: async () => {
@@ -260,7 +264,7 @@ const VIEWS = {
   history: { title: 'History', needs: 'history', icon: '📜', table: 'message_history', scope: 'org', order: ['created_at', false], readOnly: true,
     desc: 'Every announcement that went out.',
     cols: [
-      { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status' },
+      { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` },
       { f: 'message', label: 'Message', render: (v, r) => `<div class="small" style="min-width:160px;max-width:260px;overflow-wrap:anywhere">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>`
           + [audioLink(r.audio_url, '▶ Play recording'),
@@ -938,17 +942,32 @@ async function overviewPage() {
       <a class="ov-action" href="#send" data-sendmode="PREF">
         <span class="ov-ic">${ic('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>')}</span>
         <b>Send an announcement</b>
-        <span>Type a message, choose who gets it, and send it as a text or a phone call.</span>
+        <span>Write a message, choose who gets it, and send it by text, phone call or email. Send now or schedule it.</span>
       </a>
       <a class="ov-action" href="#send" data-sendmode="VOICE">
         <span class="ov-ic">${ic('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>')}</span>
         <b>Record a voice message</b>
-        <span>Record from your computer. Everyone in the group gets a phone call that plays it.</span>
+        <span>Record on this website, or call in and record by phone. Everyone in the group gets a call that plays it.</span>
       </a>
       <a class="ov-action" href="#contacts">
         <span class="ov-ic">${ic('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>')}</span>
         <b>Add people</b>
         <span>Add members one at a time, or upload your list from Excel.</span>
+      </a>
+      <a class="ov-action" href="#polls">
+        <span class="ov-ic">${ic('<path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/>')}</span>
+        <b>Ask a question</b>
+        <span>Send a poll. Members answer by replying 1, 2 or 3, and you see the results live.</span>
+      </a>
+      <a class="ov-action" href="#repeating">
+        <span class="ov-ic">${ic('<path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>')}</span>
+        <b>Repeating messages</b>
+        <span>Set a message to go out by itself every day, week or month${JEW() ? ', with zmanim filled in' : ''}.</span>
+      </a>
+      <a class="ov-action" href="#history">
+        <span class="ov-ic">${ic('<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/>')}</span>
+        <b>See who got it</b>
+        <span>Open History and click Report to see who got each message, who answered and who replied.</span>
       </a>
     </div>
 
@@ -956,12 +975,12 @@ async function overviewPage() {
     <p class="ov-sub">There are three ways to send an announcement. Use whichever is easiest.</p>
     <div class="ov-how">
       <div><span class="ov-num">1</span><b>From this website</b>
-        <p>Click <a href="#send">Send an announcement</a>, pick a group, and write your message. You'll see exactly how many people get it before you press send.</p></div>
+        <p>Click <a href="#send">Send an announcement</a>, pick a group, and write your message. Add a flyer, a recording or a poll if you like. You'll see exactly how many people get it before you press send, and you can send now or schedule it.</p></div>
       <div><span class="ov-num">2</span><b>By texting from your phone</b>
         <p>Text <b>${phone}</b> something like <i>${JEW() ? 'SEND MEN Mincha at 6:45' : 'SEND ALL Meeting tonight at 7 PM'}</i>. You'll get a text back asking you to reply <b>YES</b> to send it.</p>
         <details class="ov-more"><summary>Show all text commands</summary>
           <ul>
-            <li><b>SEND</b> group message: each person gets it the way they prefer (text or call)</li>
+            <li><b>SEND</b> group message: each person gets it the way they prefer (text, call or email)</li>
             <li><b>TEXT</b> group message: texts only</li>
             <li><b>CALL</b> group message: phone calls only</li>
             <li><b>EMERGENCY</b> group message: sends right away, even at night</li>
@@ -975,8 +994,8 @@ async function overviewPage() {
 
     <div class="ov-members">
       <b>What your members can do</b>
-      <p>Reply to any text: the reply is sent on to the office. Call <b>${phone}</b> to hear the latest announcement, reach the office, or leave a message.
-         They can stop anytime by texting <b>STOP</b>, or by pressing <b>9</b> when they call.</p>
+      <p>Reply to any text: the reply is sent on to the office. Answer a poll by replying with a number. Call <b>${phone}</b> to hear the latest announcement, reach the office, leave a message, or sign up.
+         They can stop anytime by texting <b>STOP</b>, pressing <b>9</b> when they call, or clicking unsubscribe in an email.</p>
     </div>
 
     <div class="ov-foot">
@@ -1267,7 +1286,7 @@ async function zmanimSettings() {
 }
 async function repeatingPage() {
   const o = await loadOrgZ(), main = $('#main');
-  main.innerHTML = head('Repeating messages', JEW() ? 'Messages that go out by themselves every week, like Shabbos zmanim. Times such as candle lighting are filled in fresh each week.' : 'Messages that go out by themselves on the days and time you choose, like a weekly reminder.',
+  main.innerHTML = head('Repeating messages', JEW() ? 'Messages that go out by themselves every day, week or month, like Shabbos zmanim. Times such as candle lighting are filled in fresh each time.' : 'Messages that go out by themselves on the days and time you choose, like a weekly reminder.',
     S.perms.send ? '<button class="btn" id="newrep">+ New repeating message</button>' : '') + (!JEW() ? '<div id="reps"><div class="card panel empty">Loading…</div></div>' : `<div class="card panel" style="margin-bottom:14px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
       <div class="small"><b>Zmanim:</b> ${o.zmanim_zip ? esc(o.zmanim_zip) : '<span style="color:var(--bad)">no location set</span>'} · candles ${o.candle_minutes} min before shkia${o.candle_round ? ', rounded down to ' + o.candle_round : ''}
         · Shabbos ends ${o.havdalah_minutes ? o.havdalah_minutes + ' min after shkia' : 'at tzeis'}${o.havdalah_round ? ', rounded up to ' + o.havdalah_round : ''}
@@ -1395,7 +1414,7 @@ async function pollsPage() {
     const counts = p.options.map((_, i) => vs.filter(v => v.choice === i + 1).length), max = Math.max(1, ...counts);
     return `<div class="card panel poll" data-id="${esc(p.id)}" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
-        <div><h3 style="margin:0 0 4px">${esc(p.question)}</h3>
+        <div style="flex:1 1 260px;min-width:0"><h3 style="margin:0 0 4px">${esc(p.question)}</h3>
           <div class="muted small">${esc(fmtDT(p.created_at))}${p.group_name ? ' · ' + esc(p.group_name) : ''} · ${open(p) ? `<span class="pill ok">Open</span> until ${esc(fmtDT(p.closes_at))}` : '<span class="pill">Closed</span>'}</div></div>
         <div style="display:flex;gap:8px">${open(p) && S.perms.send ? '<button class="btn secondary sm" data-close>Close poll</button>' : ''}<button class="btn secondary sm" data-who>Who answered (${num(total)})</button></div></div>
       <div class="poll-bars">${p.options.map((opt, i) => `<div class="poll-row"><div class="poll-lab"><b>${i + 1}</b> ${esc(opt)}</div>
@@ -1427,7 +1446,7 @@ async function sendPage() {
     main.innerHTML = head('Send Message') + `<div class="card panel"><p>You don't have permission to send messages from the website.</p>
       <p class="muted">Ask an owner to turn on <b>Can send from website</b> for you on the Website Admins page.</p></div>`; return;
   }
-  main.innerHTML = head('Send Message', 'Send an announcement now, or schedule it for later. Texts and calls go out within seconds.') + `
+  main.innerHTML = head('Send Message', 'Send an announcement now, or schedule it for later. Texts, calls and emails go out within seconds.') + `
   <div class="two">
     <form class="card panel" id="sendf" novalidate>
       <div class="grid2">
@@ -1488,7 +1507,7 @@ async function sendPage() {
       <div class="kv" id="calc"></div>
       <div style="margin:14px 0 6px;font-weight:600;font-size:13px;color:var(--ink-2)">Who will receive it</div>
       <div class="kv" id="reach"><div>Recipients</div><div class="muted">…</div></div>
-      <p class="small muted" id="segnote" style="margin:14px 0 0"><b>Credits:</b> each text uses 1 credit per segment: 160 plain characters, or 70 if it has Hebrew, Yiddish, emoji or special characters. Longer messages use more. A picture text (flyer) uses 3. Each phone call uses 1 credit.</p>
+      <p class="small muted" id="segnote" style="margin:14px 0 0"><b>Credits:</b> each text uses 1 credit per segment: 160 plain characters, or 70 if it has Hebrew, Yiddish, emoji or special characters. Longer messages use more. A picture text (flyer) uses 3. Each phone call uses 1 credit. Emails are free.</p>
     </div>
   </div>`;
   const f = $('#sendf'); let reach = null;
