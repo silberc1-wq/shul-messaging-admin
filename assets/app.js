@@ -534,7 +534,8 @@ function renderDemoBar() {
 }
 function renderNav() {
   renderDemoBar();
-  const items = [...NAV_ORG, ...(S.isPlatform ? NAV_PLATFORM : [])];
+  // while the owner looks at a sample account, keep the owner menu out of sight (it comes back on any real account)
+  const items = [...NAV_ORG, ...(S.isPlatform && !(S.org?.is_demo && !VIEWS[S.view]?.platform && !['p_onetime', 'p_costs'].includes(S.view)) ? NAV_PLATFORM : [])];
   const cur = groupOf(S.view);
   $('#nav').innerHTML = items.map(it => {
     if (it.g) {
