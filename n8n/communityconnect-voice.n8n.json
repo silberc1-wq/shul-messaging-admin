@@ -1,296 +1,296 @@
 {
- "name": "CommunityConnect \u2013 Voice (record by phone)",
- "nodes": [
-  {
-   "parameters": {
-    "httpMethod": "POST",
-    "path": "voice-a9f4e86705730fc7174e",
-    "responseMode": "responseNode",
-    "options": {}
-   },
-   "id": "7ad8d921-163e-443f-bdf6-c6c567d1780e",
-   "name": "Twilio Incoming Call",
-   "type": "n8n-nodes-base.webhook",
-   "typeVersion": 2,
-   "position": [
-    0,
-    200
-   ],
-   "webhookId": "97abc4e9-d0a9-480a-b7fc-cee144056896"
-  },
-  {
-   "parameters": {
-    "assignments": {
-     "assignments": [
-      {
-       "id": "156a4c75-8596-4bee-860d-1256c065c0e5",
-       "name": "supabaseUrl",
-       "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
-       "type": "string"
+  "name": "CommunityConnect – Voice (record by phone)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "voice-a9f4e86705730fc7174e",
+        "responseMode": "responseNode",
+        "options": {}
       },
-      {
-       "id": "5eb08592-2569-4cc9-9470-4759235e73bc",
-       "name": "twilioAuthToken",
-       "value": "PASTE_YOUR_TWILIO_AUTH_TOKEN_HERE",
-       "type": "string"
+      "id": "7ad8d921-163e-443f-bdf6-c6c567d1780e",
+      "name": "Twilio Incoming Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "97abc4e9-d0a9-480a-b7fc-cee144056896"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "156a4c75-8596-4bee-860d-1256c065c0e5",
+              "name": "supabaseUrl",
+              "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "5eb08592-2569-4cc9-9470-4759235e73bc",
+              "name": "twilioAuthToken",
+              "value": "PASTE_YOUR_TWILIO_AUTH_TOKEN_HERE",
+              "type": "string"
+            },
+            {
+              "id": "d7566cf2-ec5d-4989-af89-a6382aa542a2",
+              "name": "voiceWebhookUrl",
+              "value": "https://n8n.punchverification.com/webhook/voice-a9f4e86705730fc7174e",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
       },
-      {
-       "id": "d7566cf2-ec5d-4989-af89-a6382aa542a2",
-       "name": "voiceWebhookUrl",
-       "value": "https://n8n.punchverification.com/webhook/voice-a9f4e86705730fc7174e",
-       "type": "string"
-      }
-     ]
-    },
-    "includeOtherFields": true,
-    "options": {}
-   },
-   "id": "6a6c8a6e-4c99-487b-bc6f-1dedf4ecaca2",
-   "name": "Config (voice)",
-   "type": "n8n-nodes-base.set",
-   "typeVersion": 3.4,
-   "position": [
-    220,
-    200
-   ]
-  },
-  {
-   "parameters": {
-    "jsCode": "\n// Twilio signs every request: base64(HMAC-SHA1(authToken, full URL + sorted POST params)).\n// Our own step links add \"?s=<step>\", which is part of the signed URL.\nconst cfg = $('Config (voice)').first().json;\nconst b = $json.body || {};\nconst q = $json.query || {};\nlet base = cfg.voiceWebhookUrl + (q.s ? '?s=' + q.s : '');\nfor (const k of Object.keys(b).sort()) base += k + b[k];\nreturn [{ json: { ...$json, sigBase: base, sigHeader: ($json.headers || {})['x-twilio-signature'] || '' } }];\n"
-   },
-   "id": "2914ec3d-30cf-44d5-9963-600faa0dc189",
-   "name": "Build Signature Check",
-   "type": "n8n-nodes-base.code",
-   "typeVersion": 2,
-   "position": [
-    440,
-    200
-   ]
-  },
-  {
-   "parameters": {
-    "action": "hmac",
-    "type": "SHA1",
-    "value": "={{ $json.sigBase }}",
-    "dataPropertyName": "expected",
-    "secret": "={{ $('Config (voice)').first().json.twilioAuthToken }}",
-    "encoding": "base64"
-   },
-   "id": "5826760e-63df-42dd-a4ff-c6ff94116f11",
-   "name": "Twilio Signature",
-   "type": "n8n-nodes-base.crypto",
-   "typeVersion": 1,
-   "position": [
-    660,
-    200
-   ]
-  },
-  {
-   "parameters": {
-    "conditions": {
-     "options": {
-      "caseSensitive": true,
-      "leftValue": "",
-      "typeValidation": "loose"
-     },
-     "conditions": [
-      {
-       "id": "9c172ca4-eeb3-40b9-80cf-fe9db3b11d72",
-       "leftValue": "={{ $json.sigHeader !== '' && $json.expected === $json.sigHeader }}",
-       "rightValue": "",
-       "operator": {
-        "type": "boolean",
-        "operation": "true",
-        "singleValue": true
-       }
-      }
-     ],
-     "combinator": "and"
-    },
-    "options": {}
-   },
-   "id": "df97bf59-75a0-4958-957d-f95c9bdf1675",
-   "name": "Really from Twilio?",
-   "type": "n8n-nodes-base.if",
-   "typeVersion": 2,
-   "position": [
-    880,
-    200
-   ]
-  },
-  {
-   "parameters": {
-    "method": "POST",
-    "url": "={{ $('Config (voice)').first().json.supabaseUrl }}/rest/v1/rpc/handle_voice",
-    "authentication": "predefinedCredentialType",
-    "nodeCredentialType": "supabaseApi",
-    "sendBody": true,
-    "specifyBody": "json",
-    "jsonBody": "={{ JSON.stringify({ p_call_sid: $json.body.CallSid, p_from: $json.body.From, p_to: $json.body.To, p_step: ($json.query || {}).s || '', p_digits: $json.body.Digits || null, p_recording_url: $json.body.RecordingUrl || null, p_recording_seconds: parseInt($json.body.RecordingDuration || '0', 10) || null, p_base_url: $('Config (voice)').first().json.voiceWebhookUrl }) }}",
-    "options": {}
-   },
-   "id": "c62e458d-4aba-4742-85b1-9b86218e8f5e",
-   "name": "Handle Call (Supabase)",
-   "type": "n8n-nodes-base.httpRequest",
-   "typeVersion": 4.2,
-   "position": [
-    1100,
-    120
-   ],
-   "credentials": {
-    "supabaseApi": {
-     "id": "UJKemDkIPKxRY4nb",
-     "name": "Supabase account"
-    }
-   },
-   "onError": "continueRegularOutput"
-  },
-  {
-   "parameters": {
-    "respondWith": "text",
-    "responseBody": "={{ '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' + ($json.twiml || '<Response><Say voice=\"Polly.Matthew\">Sorry, something went wrong. Please try again later.</Say><Hangup/></Response>') }}",
-    "options": {
-     "responseHeaders": {
-      "entries": [
-       {
-        "name": "Content-Type",
-        "value": "text/xml"
-       }
+      "id": "6a6c8a6e-4c99-487b-bc6f-1dedf4ecaca2",
+      "name": "Config (voice)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        200
       ]
-     }
-    }
-   },
-   "id": "9ab366f7-89e0-445b-b7c6-021e01bdfdfd",
-   "name": "Answer the Call",
-   "type": "n8n-nodes-base.respondToWebhook",
-   "typeVersion": 1.1,
-   "position": [
-    1320,
-    120
-   ]
-  },
-  {
-   "parameters": {
-    "respondWith": "text",
-    "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Reject/></Response>",
-    "options": {
-     "responseHeaders": {
-      "entries": [
-       {
-        "name": "Content-Type",
-        "value": "text/xml"
-       }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Twilio signs every request: base64(HMAC-SHA1(authToken, full URL + sorted POST params)).\n// Our own step links add \"?s=<step>\", which is part of the signed URL.\nconst cfg = $('Config (voice)').first().json;\nconst b = $json.body || {};\nconst q = $json.query || {};\nlet base = cfg.voiceWebhookUrl + (q.s ? '?s=' + q.s : '');\nfor (const k of Object.keys(b).sort()) base += k + b[k];\nreturn [{ json: { ...$json, sigBase: base, sigHeader: ($json.headers || {})['x-twilio-signature'] || '' } }];\n"
+      },
+      "id": "2914ec3d-30cf-44d5-9963-600faa0dc189",
+      "name": "Build Signature Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        200
       ]
-     }
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA1",
+        "value": "={{ $json.sigBase }}",
+        "dataPropertyName": "expected",
+        "secret": "={{ $('Config (voice)').first().json.twilioAuthToken }}",
+        "encoding": "base64"
+      },
+      "id": "5826760e-63df-42dd-a4ff-c6ff94116f11",
+      "name": "Twilio Signature",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "9c172ca4-eeb3-40b9-80cf-fe9db3b11d72",
+              "leftValue": "={{ $json.sigHeader !== '' && $json.expected === $json.sigHeader }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "df97bf59-75a0-4958-957d-f95c9bdf1675",
+      "name": "Really from Twilio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (voice)').first().json.supabaseUrl }}/rest/v1/rpc/handle_voice",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_call_sid: $json.body.CallSid, p_from: $json.body.From, p_to: $json.body.To, p_step: ($json.query || {}).s || '', p_digits: $json.body.Digits || null, p_recording_url: $json.body.RecordingUrl || null, p_recording_seconds: parseInt($json.body.RecordingDuration || '0', 10) || null, p_base_url: $('Config (voice)').first().json.voiceWebhookUrl, p_transcript: $json.body.TranscriptionText || null }) }}",
+        "options": {}
+      },
+      "id": "c62e458d-4aba-4742-85b1-9b86218e8f5e",
+      "name": "Handle Call (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        120
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "UJKemDkIPKxRY4nb",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' + ($json.twiml || '<Response><Say voice=\"Polly.Matthew-Neural\">Sorry, something went wrong. Please try again later.</Say><Hangup/></Response>') }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9ab366f7-89e0-445b-b7c6-021e01bdfdfd",
+      "name": "Answer the Call",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Reject/></Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e74acee9-da00-4ad4-ad83-e7462159b4aa",
+      "name": "Reject (not from Twilio)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## CommunityConnect: record an announcement by phone\n\n1. In **Config (voice)** paste your Twilio Auth Token (the same one as in the texting workflow).\n2. **voiceWebhookUrl** must be exactly the **Production URL** of *Twilio Incoming Call* (it already is, unless your n8n address is different).\n3. Save, then **Publish**.\n4. In Twilio, set your number's **A call comes in** to that Production URL (HTTP POST).\n\nTexters call the number, choose a group by keypad, record, listen back and press 1. Everyone in the group gets a phone call that plays the recording (sent by the texting workflow).",
+        "height": 360,
+        "width": 520,
+        "color": 5
+      },
+      "id": "7ab124a0-8cfd-4c17-ab83-40eebf17585b",
+      "name": "Read Me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ]
     }
-   },
-   "id": "e74acee9-da00-4ad4-ad83-e7462159b4aa",
-   "name": "Reject (not from Twilio)",
-   "type": "n8n-nodes-base.respondToWebhook",
-   "typeVersion": 1.1,
-   "position": [
-    1100,
-    320
-   ]
+  ],
+  "connections": {
+    "Twilio Incoming Call": {
+      "main": [
+        [
+          {
+            "node": "Config (voice)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config (voice)": {
+      "main": [
+        [
+          {
+            "node": "Build Signature Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Signature Check": {
+      "main": [
+        [
+          {
+            "node": "Twilio Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twilio Signature": {
+      "main": [
+        [
+          {
+            "node": "Really from Twilio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Really from Twilio?": {
+      "main": [
+        [
+          {
+            "node": "Handle Call (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject (not from Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Call (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Answer the Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  {
-   "parameters": {
-    "content": "## CommunityConnect: record an announcement by phone\n\n1. In **Config (voice)** paste your Twilio Auth Token (the same one as in the texting workflow).\n2. **voiceWebhookUrl** must be exactly the **Production URL** of *Twilio Incoming Call* (it already is, unless your n8n address is different).\n3. Save, then **Publish**.\n4. In Twilio, set your number's **A call comes in** to that Production URL (HTTP POST).\n\nTexters call the number, choose a group by keypad, record, listen back and press 1. Everyone in the group gets a phone call that plays the recording (sent by the texting workflow).",
-    "height": 360,
-    "width": 520,
-    "color": 5
-   },
-   "id": "7ab124a0-8cfd-4c17-ab83-40eebf17585b",
-   "name": "Read Me",
-   "type": "n8n-nodes-base.stickyNote",
-   "typeVersion": 1,
-   "position": [
-    0,
-    -260
-   ]
-  }
- ],
- "connections": {
-  "Twilio Incoming Call": {
-   "main": [
-    [
-     {
-      "node": "Config (voice)",
-      "type": "main",
-      "index": 0
-     }
-    ]
-   ]
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
   },
-  "Config (voice)": {
-   "main": [
-    [
-     {
-      "node": "Build Signature Check",
-      "type": "main",
-      "index": 0
-     }
-    ]
-   ]
-  },
-  "Build Signature Check": {
-   "main": [
-    [
-     {
-      "node": "Twilio Signature",
-      "type": "main",
-      "index": 0
-     }
-    ]
-   ]
-  },
-  "Twilio Signature": {
-   "main": [
-    [
-     {
-      "node": "Really from Twilio?",
-      "type": "main",
-      "index": 0
-     }
-    ]
-   ]
-  },
-  "Really from Twilio?": {
-   "main": [
-    [
-     {
-      "node": "Handle Call (Supabase)",
-      "type": "main",
-      "index": 0
-     }
-    ],
-    [
-     {
-      "node": "Reject (not from Twilio)",
-      "type": "main",
-      "index": 0
-     }
-    ]
-   ]
-  },
-  "Handle Call (Supabase)": {
-   "main": [
-    [
-     {
-      "node": "Answer the Call",
-      "type": "main",
-      "index": 0
-     }
-    ]
-   ]
-  }
- },
- "active": false,
- "settings": {
-  "executionOrder": "v1",
-  "timezone": "America/New_York"
- },
- "pinData": {},
- "meta": {},
- "tags": []
+  "pinData": {},
+  "meta": {},
+  "tags": []
 }

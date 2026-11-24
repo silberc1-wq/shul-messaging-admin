@@ -289,11 +289,11 @@ const VIEWS = {
     rowActions: r => [...(r._rep && r._rep.tracked ? [{ label: '📊 Report', run: () => deliveryReport(r) }] : []), ...(S.perms.send ? [{ label: '↻ Use again', run: () => reuseMessage(r) }] : [])] },
 
   replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
-    desc: 'Texts members sent back, and voicemails left on the phone line. They are also forwarded to the phones and email in Settings.',
+    desc: 'Texts members sent back, and voicemails left on the phone line (typed out when "Turn voicemails into text" is on). They are also forwarded to the phones and email in Settings. Private voicemails (press 6) show only to the person they are for.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name', label: 'Name', edit: false }, { f: 'phone', label: 'Phone', type: 'phone', edit: false },
       { f: 'message', label: 'Message', type: 'longtext', edit: false },
-      { f: 'audio_url', label: 'Voicemail', edit: false, render: v => audioPlayer(v) }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
+      { f: 'audio_url', label: 'Voicemail', edit: false, render: v => audioPlayer(v) }, { f: 'is_private', label: 'Private', edit: false, render: v => v ? '<span class="pill warn">🔒 Private</span>' : '' }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
       { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ],
     rowActions: r => r.status !== 'HANDLED' ? [{ label: 'Mark handled', run: async () => check(await sb.from('replies').update({ status: 'HANDLED' }).eq('id', r.id), 'Marked handled') }] : [] },
@@ -1046,6 +1046,15 @@ const SETTINGS_COLS = [
   { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
+  { f: 'keypad_join', label: 'Callers can pick a list to join (press 4)', type: 'bool', hint: 'After pressing 4, callers hear your groups ("For Women, press 1…") and join the one they pick. Members can also add themselves to another list this way.' },
+  { f: 'transcribe_voicemail', label: 'Turn voicemails into text', type: 'bool', hint: 'Voicemails are typed out automatically (English only, up to 2 minutes) and the text is emailed to you and shown under Replies. Costs about 5¢ per voicemail minute.' },
+  { f: 'private_vm_label', label: 'Private voicemail box for (press 6)', hint: 'Optional, e.g. "the Rabbi". Callers press 6 to leave a message only this person sees. Leave empty to turn off.' },
+  { f: 'private_vm_email', label: 'Private voicemails go to email', type: 'email', hint: 'Only this person sees private voicemails on the admin site, when they log in with this email.' },
+  { f: 'private_vm_phone', label: 'Private voicemails go to phone', type: 'phone', hint: 'Optional. Gets a text with a link to listen.' },
+  { f: 'conference_pin', label: 'Conference line PIN (press 7)', pattern: /^\d{3,8}$/, patternMsg: 'The conference PIN must be 3 to 8 digits', hint: 'Optional. Callers press 7 and enter this PIN to join one shared conference call (up to 100 people). Leave empty to turn off.' },
+  { f: 'pin_code', label: 'PIN-protected announcements (press 8)', pattern: /^\d{3,8}$/, patternMsg: 'The PIN must be 3 to 8 digits', hint: 'Optional. Callers press 8 and enter this PIN to hear the latest message sent to the group below. Leave empty to turn off.' },
+  { f: 'pin_group', label: 'PIN plays messages sent to group', type: 'select', opts: () => S.groups.filter(g => g.active && g.code !== 'ALL').map(g => g.code), hint: 'Messages to this group are only played to callers who enter the PIN (and to members of the group).' },
+  { f: 'phone_voting', label: 'Call-only members can vote on polls by keypad', type: 'bool', hint: 'When you send a poll, members set to phone calls get a call and press 1, 2, 3… to vote. Each call uses 1 credit.' },
   { f: 'detect_voicemail', label: 'Leave the whole message on voicemail', type: 'bool', hint: 'Waits for the voicemail beep, so the full message is saved on the member\'s voicemail, and the delivery report shows "Answered" vs "Voicemail". People who pick up hear it 2 to 3 seconds later. Costs about ¾ cent extra per call.' },
   { f: 'retry_calls', label: 'Call again if there\'s no answer', type: 'bool', hint: 'Members who didn\'t pick up or were busy get one more call about 15 minutes later (never during quiet hours, unless it\'s an emergency).' },
   { f: 'allow_auto_signup', label: 'Add new signups automatically', type: 'bool', hint: 'Applies to text JOIN and phone signups. If off, they appear in Signup Requests for approval.' },
@@ -1059,6 +1068,7 @@ function recordForm({ title, desc, cols, row, table, idField = 'id', readonly = 
   if (locked) $$('#rec input, #rec select, #rec textarea').forEach(el => (el.disabled = true));
   $('#rec').addEventListener('submit', async e => {
     e.preventDefault(); const vals = readForm(e.target, cols.filter(c => c.edit !== false));
+    const bad = cols.find(c => c.pattern && vals[c.f] != null && !c.pattern.test(vals[c.f])); if (bad) return toast(bad.patternMsg || bad.label + ' is not valid', true);
     check(await sb.from(table).update(vals).eq(idField, row[idField]), 'Saved');
     if (table === 'organizations') { await loadOrgs(); }
   });
@@ -1529,7 +1539,7 @@ async function deliveryReport(h) {
     <div class="table-wrap" style="max-height:50vh;overflow:auto"><table class="data"><thead><tr><th>Name</th><th>Phone / email</th><th>How</th><th>Result</th><th>Listened</th><th>Reply</th></tr></thead><tbody id="repbody"></tbody></table></div>`;
   modal('Delivery report', `<div class="rep-share"><button type="button" class="btn secondary sm" data-rs="copy">📋 Copy summary</button>
       <button type="button" class="btn secondary sm" data-rs="csv">⬇ Download (Excel)</button><button type="button" class="btn secondary sm" data-rs="print">🖨 Print / PDF</button>
-      ${navigator.share ? '<button type="button" class="btn secondary sm" data-rs="share">📤 Share</button>' : ''}</div>` + body, { wide: true });
+      ${navigator.share ? '<button type="button" class="btn secondary sm" data-rs="share">📤 Share</button>' : ''}<button type="button" class="btn secondary sm" data-rs="link">🔗 Share link</button><div id="replink" class="hidden" style="flex-basis:100%;padding:10px 12px;border-radius:10px;background:var(--sky-soft)"></div></div>` + body, { wide: true });
   // ---- sharing ----
   const when = fmtDT(h.created_at), title = `Delivery report: ${when} · ${h.group_name || ''}`;
   const sumLines = () => {
@@ -1547,6 +1557,15 @@ async function deliveryReport(h) {
     const k = e.target.closest('[data-rs]')?.dataset.rs; if (!k) return;
     if (k === 'copy') { try { await navigator.clipboard.writeText(sumLines()); toast('Summary copied. Paste it into an email or text.'); } catch { toast('Could not copy', true); } }
     if (k === 'share') { try { await navigator.share({ title, text: sumLines() }); } catch {} }
+    if (k === 'link' || k === 'linkcopy' || k === 'linkstop') {
+      const box = $('#replink');
+      if (k === 'linkstop') { const r2 = await sb.rpc('stop_share_report', { p_history: h.id }); if (r2.error) return toast(r2.error.message, true); box.classList.add('hidden'); return toast('The link no longer works.'); }
+      if (k === 'linkcopy') { try { await navigator.clipboard.writeText($('#replinkurl').value); toast('Link copied'); } catch { $('#replinkurl').select(); } return; }
+      const r2 = await sb.rpc('share_report', { p_history: h.id }); if (r2.error) return toast(r2.error.message, true);
+      box.innerHTML = `<div class="small" style="margin-bottom:6px">Anyone with this link can see this report (names show as first name and last initial, phone numbers are hidden). It works until <b>${esc(fmtDT(r2.data.expires))}</b>.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="replinkurl" readonly value="${esc(r2.data.url)}" style="flex:1;min-width:220px"><button type="button" class="btn sm" data-rs="linkcopy">Copy</button><button type="button" class="btn secondary sm" data-rs="linkstop">Stop sharing</button></div>`;
+      box.classList.remove('hidden'); try { await navigator.clipboard.writeText(r2.data.url); toast('Link copied'); } catch {}
+    }
     if (k === 'csv') {
       const data = rowsOut(), cols = ['Name', 'Phone / email', 'How', 'Result', 'Reason', 'Listened', 'Reply'];
       const q = v => { v = String(v ?? ''); if (/^[=+\-@]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -2041,7 +2060,7 @@ async function sendPage() {
     const t = (usePre ? pre : '') + msg + (useFoot ? foot : '');          // what is actually sent (heading + message + STOP line)
     const fixed = segInfo((usePre ? pre : '') + (useFoot ? foot : '')).chars; // the part added automatically
     const i = segInfo(t); const mine = Math.max(0, i.chars - fixed);
-    const sms = reach ? reach.sms : 0, calls = reach && !pollOn() ? reach.calls : 0, emails = reach && ['PREF', 'EMERGENCY'].includes(mode) && !pollOn() ? (reach.email || 0) : 0;
+    const sms = reach ? reach.sms : 0, calls = reach && (!pollOn() || reach.poll_calls) ? reach.calls : 0, emails = reach && ['PREF', 'EMERGENCY'].includes(mode) && !pollOn() ? (reach.email || 0) : 0;
     $('#calc').innerHTML = `
       <div>Encoding</div><div>${i.encoding === 'GSM-7' ? '<span class="pill ok">GSM-7 (standard)</span>' : '<span class="pill warn">Unicode</span>'}</div>
       <div>Characters</div><div>${num(i.chars)} <span class="muted small">= ${num(fixed)} heading and STOP line + ${num(mine)} your message</span></div>
@@ -2055,6 +2074,7 @@ async function sendPage() {
       ${emails ? `<div>Emails</div><div><b>${num(emails)}</b> people <span class="muted small">(free)</span></div>` : ''}
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
       ${reach.skipped_call_only ? `<div>Left out</div><div class="small" style="color:var(--warn)">${num(reach.skipped_call_only)} set to CALL (polls are text only)</div>` : ''}
+      ${pollOn() && reach.poll_calls ? `<div>Phone voting</div><div class="small muted">${num(reach.poll_calls)} call-only members get a call and vote by pressing 1, 2, 3…</div>` : ''}
       <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? `<div class="small muted">${msg ? 'Call members hear your typed message only, never the flyer.' : 'No message typed: only texting members get the flyer, so call members won\'t be called.'}</div>` : ''}</div>
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
     const bc = $('#badchars');
@@ -2148,7 +2168,7 @@ async function sendPage() {
   f.vurl.addEventListener('change', () => showPlayer(/^https:\/\//.test(f.vurl.value.trim()) ? f.vurl.value.trim() : null));
   const loadReach = async () => {
     const mode = f.mode.value;
-    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'TEXTERS' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || later() || (!pollOn() && f.vdnd.checked) });
+    const { data, error } = await sb.rpc('web_preview', { p_org: o.id, p_group: f.group.value, p_mode: pollOn() ? 'POLL' : mode === 'EMERGENCY' ? 'PREF' : mode === 'VOICE' ? 'CALL' : mode, p_emergency: mode === 'EMERGENCY' || later() || (!pollOn() && f.vdnd.checked) });
     reach = error ? null : data; draw();
   };
   try { const m = sessionStorage.getItem('cc_send_mode'); sessionStorage.removeItem('cc_send_mode'); if (m === 'VOICE') f.mode.value = 'VOICE'; } catch {}
@@ -2247,7 +2267,7 @@ async function sendPage() {
     if (flyer && !flyer.image) return toast('That flyer can\'t be sent. Upload it as a picture (JPG, PNG) or a PDF.', true);
     if (LINK_RE.test(t) || PHONE_RE.test(t)) return toast('Please remove the web address or phone number. Your texting registration doesn\'t allow them in messages.', true);
     const flyerOnly = !t && !!flyer;           // nothing to say on a call: texting members only
-    const textOnly = flyerOnly || poll;
+    const textOnly = flyerOnly || (poll && !reach?.poll_calls);
     if (flyerOnly) t = 'Please see the attached flyer.';
     const pre = reach?.sms_prefix || '', foot = reach?.sms_footer || '';
     const tz = zf(t);
@@ -2279,7 +2299,7 @@ async function sendPage() {
       pollId = pr.data;
     }
     const res = await sb.rpc('web_send', { p_org: o.id, p_group: f.group.value, p_message: msgOut,
-      p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media, p_when: when ? when.toISOString() : null });
+      p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media, p_when: when ? when.toISOString() : null });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
     if (curDraft) { sb.from('message_drafts').delete().eq('id', curDraft).then(() => {}); curDraft = null; countDrafts(); }
