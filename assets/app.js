@@ -1621,7 +1621,7 @@ async function sendPage() {
         <audio id="vplayer" controls class="hidden" style="width:100%;margin:0 0 12px"></audio>
         <div class="hint" style="margin:-4px 0 12px">📞 Everyone in the group gets a phone call: "This is a message from ${esc(o.name)}", then the recording plays twice.</div>
       </div>
-      <div class="field"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px"><label id="msglabel">Message</label><button type="button" class="btn ghost sm" id="pastmsg" style="margin-bottom:4px">↻ Use a past message</button></div><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="${JEW() ? 'Mincha today is at 6:45 PM.' : 'Meeting tonight at 7 PM.'}"></textarea>
+      <div class="field"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px"><label id="msglabel">Message</label><span style="display:flex;gap:4px"><button type="button" class="btn ghost sm" id="draftsbtn" style="margin-bottom:4px">📝 Drafts</button><button type="button" class="btn ghost sm" id="pastmsg" style="margin-bottom:4px">↻ Use a past message</button></span></div><textarea name="msg" id="msg" rows="6" maxlength="1600" placeholder="${JEW() ? 'Mincha today is at 6:45 PM.' : 'Meeting tonight at 7 PM.'}"></textarea>
         <div class="hint" id="namehint">Tip: type <b>{name}</b> to greet each person by their first name, e.g. "Dear {name}, …"</div>
         ${JEW() ? `<details class="zdet" id="zdet"><summary>🕯️ Add a time: candle lighting, shkia, zmanim…</summary>${zmanChips(false)}<div class="hint">Times are for the day it goes out. Add -10 or +5 for minutes before/after, e.g. {shkia-10}.</div></details><div id="zwarn" class="small" style="color:var(--warn)"></div>` : ''}
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div>
@@ -1652,7 +1652,7 @@ async function sendPage() {
           <div class="hint">It goes out within 5 minutes of this time. Until then it waits under <b>Messages → Scheduled</b>, where you can change or delete it.</div></div></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="muted small">${o.confirmation_required ? 'You\'ll confirm before it goes out.' : ''}</span>
-        <button class="btn gold" type="submit" id="sendbtn">Review & send</button></div>
+        <span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" type="button" id="savedraft">💾 Save draft</button><button class="btn gold" type="submit" id="sendbtn">Review & send</button></span></div>
     </form>
     <div class="card panel">
       <h3 id="calch">Message calculator</h3>
@@ -1937,6 +1937,44 @@ async function sendPage() {
     f.msg.focus();
   }
   try { const r = sessionStorage.getItem('cc_reuse'); sessionStorage.removeItem('cc_reuse'); if (r) setTimeout(() => applyReuse(JSON.parse(r)), 0); } catch {}
+  // ----- drafts -----
+  let curDraft = null;
+  async function countDrafts() {
+    const { count } = await sb.from('message_drafts').select('id', { count: 'exact', head: true }).eq('org_id', o.id);
+    $('#draftsbtn').textContent = count ? `📝 Drafts (${count})` : '📝 Drafts';
+  }
+  countDrafts();
+  $('#savedraft').addEventListener('click', async () => {
+    const poll = $('#pollon').checked ? pollOpts() : null;
+    const row = { org_id: o.id, message: f.msg.value, group_name: f.group.value, mode: f.mode.value, poll: poll && poll.length ? poll : null, updated_at: new Date().toISOString() };
+    if (!row.message.trim() && !row.poll) return toast('Type something first, then save it as a draft.', true);
+    const r = curDraft ? await sb.from('message_drafts').update(row).eq('id', curDraft).select('id').single()
+                       : await sb.from('message_drafts').insert(row).select('id').single();
+    if (r.error) return toast(friendlyError(r.error), true);
+    curDraft = r.data?.id || curDraft; countDrafts();
+    toast('Draft saved. Open it any time from 📝 Drafts.' + (typeof flyer !== 'undefined' && flyer ? ' The flyer and recording aren\'t saved with drafts, so attach them again when you send.' : ''));
+  });
+  $('#draftsbtn').addEventListener('click', async () => {
+    const { data } = await sb.from('message_drafts').select('*').eq('org_id', o.id).order('updated_at', { ascending: false }).limit(100);
+    const list = data || [];
+    const m = modal('Drafts', `<div id="drl" style="max-height:60vh;overflow:auto"></div>`, { wide: true });
+    const drawD = () => {
+      $('#drl').innerHTML = list.map(r => `<div class="pm-item" style="display:flex;gap:10px;align-items:flex-start;cursor:default">
+          <div style="flex:1;min-width:0"><div class="small muted">${esc(fmtDT(r.updated_at))} · ${esc(r.created_by || '')} · <span class="chip">${esc(r.group_name || '')}</span>${r.poll ? ' 📊' : ''}</div>
+          <div class="pm-text">${esc((r.message || '').slice(0, 240)) || '<span class="muted">(no text)</span>'}</div></div>
+          <button type="button" class="btn sm" data-use="${esc(r.id)}">Open</button><button type="button" class="btn ghost sm" data-del="${esc(r.id)}" title="Delete draft">🗑</button></div>`).join('')
+        || '<div class="empty">No drafts yet. Write a message and press 💾 Save draft to keep it for later.</div>';
+    };
+    $('#drl').addEventListener('click', async e => {
+      const u = e.target.closest('[data-use]'), d = e.target.closest('[data-del]');
+      if (u) { const r = list.find(x => x.id === u.dataset.use); m.closest('.modal-back')?.remove();
+        await applyReuse({ message: r.message, group: r.group_name, mode: r.mode, poll: r.poll }); curDraft = r.id;
+        toast('Draft opened. Press 💾 Save draft again to keep your changes.'); }
+      if (d) { await sb.from('message_drafts').delete().eq('id', d.dataset.del); list.splice(list.findIndex(x => x.id === d.dataset.del), 1);
+        if (curDraft === d.dataset.del) curDraft = null; drawD(); countDrafts(); }
+    });
+    drawD();
+  });
   $('#pastmsg').addEventListener('click', async () => {
     const { data } = await sb.from('message_history').select('id,created_at,group_name,command,message,media_url,audio_url,recipient_count')
       .eq('org_id', o.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(200);
@@ -2004,6 +2042,7 @@ async function sendPage() {
       p_mode: poll ? 'TEXTERS' : flyerOnly ? 'FLYER' : mode === 'EMERGENCY' ? 'PREF' : mode, p_emergency: mode === 'EMERGENCY' || (!textOnly && f.vdnd.checked), p_media_url: up.media, p_when: when ? when.toISOString() : null });
     $('#sendbtn').disabled = false;
     if (res.error) { if (pollId) await sb.from('polls').update({ deleted_at: new Date().toISOString() }).eq('id', pollId); return toast(res.error.message, true); }
+    if (curDraft) { sb.from('message_drafts').delete().eq('id', curDraft).then(() => {}); curDraft = null; countDrafts(); }
     if (mode === 'EMERGENCY' && cs.left != null && needNow > cs.left) setTimeout(() => creditsModal(needNow, Math.max(cs.left, 0), true), 1500);
     toast(when ? `Scheduled for ${fmtDT(when.toISOString())}. It's waiting under Messages → Scheduled.` : poll ? 'Poll sent. Watch the answers come in on the Polls page.' : 'Sending now. It will appear in History in a moment.');
     f.msg.value = ''; flyer = null; showFlyer();
