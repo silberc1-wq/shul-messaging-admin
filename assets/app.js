@@ -208,7 +208,7 @@ const VIEWS = {
       { f: 'address_street', label: 'Street address', table: false, max: 200 }, { f: 'address_city', label: 'City', table: false, max: 100 },
       { f: 'address_state', label: 'State', table: false, max: 20 }, { f: 'address_zip', label: 'ZIP', table: false, max: 10 },
       { f: '_map', label: 'Map', type: 'map', export: false, render: (v, r) => addrLine(r) ? `<a class="small nowrap" href="${esc(mapsUrl(r))}" target="_blank" rel="noopener">📍 ${esc(r.address_city || 'Map')}</a>` : '' },
-      { f: 'groups', label: 'Groups', type: 'groups' }, { f: 'active', label: 'Active', type: 'bool' },
+      { f: 'groups', label: 'Groups', type: 'groups', hint: 'With no group checked, this person only gets messages sent to ALL.' }, { f: 'active', label: 'Active', type: 'bool' },
       { f: 'language', label: 'Language', type: 'select', opts: ['English', 'Yiddish', 'Hebrew', 'Russian', 'Spanish', 'French'], table: false },
       { f: 'is_test', label: 'Test contact', type: 'bool', table: false, hint: 'When Test Mode is on, only test contacts receive messages.' },
       { f: 'signup_source', label: 'Source', table: false }, { f: 'notes', label: 'Notes', type: 'longtext', table: false },
@@ -528,7 +528,7 @@ const canWrite = v => !v.readOnly && (!v.perm || !!S.perms[v.perm]);
 function renderDemoBar() {
   const el = $('#demobar'); if (!el) return;
   if (S.org?.is_demo) {
-    el.innerHTML = `👋 <b>This is a sample account.</b> The members are made up and show sample results. Add your own phone under <a href="#contacts">People → Contacts</a> to get real texts and calls. Everything resets every night.`;
+    el.innerHTML = `👋 <b>This is a sample account.</b> The members are made up and show sample results. Add your own phone under <a href="#contacts">People → Contacts</a> and check the groups you'll send to (or send to ALL) to get real texts and calls. Everything resets every night.`;
     el.classList.remove('hidden');
   } else el.classList.add('hidden');
 }
