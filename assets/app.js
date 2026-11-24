@@ -1235,26 +1235,32 @@ const RATE_LABELS = [
   ['mms', 'Picture text sent (Twilio)'], ['mms_carrier_us', 'Carrier fee per picture, US'], ['mms_carrier_ca', 'Carrier fee per picture, Canada'],
   ['failed_msg', 'Failed text fee'], ['sms_in', 'Text received'], ['call_out_min', 'Outgoing call, per minute'], ['call_in_min', 'Incoming call, per minute'],
   ['in_call_minutes_guess', 'Guess: minutes per incoming call'], ['amd_call', 'Voicemail detection, per call'], ['recording_min', 'Voicemail recording, per minute'],
-  ['transcribe_min', 'Voicemail to text (Groq), per minute'], ['number_month', 'Phone number, per month']];
+  ['transcribe_min', 'Voicemail to text (Groq), per minute'], ['number_month', 'Phone number, per month'],
+  ['tts_neural_100', 'Spoken voice, Neural (per 100 characters)'], ['tts_standard_100', 'Spoken voice, Standard (per 100 characters)'],
+  ['tts_generative_100', 'Spoken voice, Generative (per 100 characters)'], ['in_call_tts_chars_guess', 'Guess: characters spoken per incoming call'],
+  ['conf_min', 'Conference line, per person per minute'], ['conf_minutes_guess', 'Guess: minutes per conference caller'],
+  ['card_pct', 'Card fee, % (Stripe)'], ['card_fixed', 'Card fee, fixed per payment (Stripe)'], ['billing_pct', 'Subscription fee, % (Stripe Billing)']];
+const COST_PARTS = [['cost_texts', 'Texts'], ['cost_calls', 'Call minutes'], ['cost_voice', 'Spoken voice'], ['cost_incoming', 'Incoming texts, calls & conference'],
+  ['cost_voicemail', 'Voicemail & typing it out'], ['cost_numbers', 'Phone numbers'], ['cost_card', 'Card fees (Stripe)']];
 async function costsPage() {
   if (!S.isPlatform) { $('#main').innerHTML = head('Costs', '') + '<div class="card panel">Only the platform owner can see this.</div>'; return; }
   const usd = (n, d = 2) => (n < 0 ? '−$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
   const months = [...Array(12)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); return d.toISOString().slice(0, 7) + '-01'; });
   const pick = sessionStorage.getItem('cc_cost_month') || months[0];
-  $('#main').innerHTML = head('Costs', 'What each account costs you this month, and what it pays. Costs are worked out from what was actually sent, using the prices at the bottom. Your Twilio bill is the final word; incoming call minutes are a guess.')
+  $('#main').innerHTML = head('Costs', 'What each account costs you this month, and what it pays: texts, calls, the spoken voice, incoming calls, voicemail, phone numbers and card fees. Worked out from what was actually sent, using the prices at the bottom, and always rounded up to the next cent. Your Twilio and Stripe statements are the final word; incoming call length is a guess.')
     + `<div class="toolbar" style="padding:0;margin:0 0 12px"><select id="cm">${months.map(m => `<option value="${m}" ${m === pick ? 'selected' : ''}>${new Date(m + 'T12:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>`).join('')}</select></div><div id="cbody"><p class="muted">Loading…</p></div>`;
   $('#cm').addEventListener('change', e => { sessionStorage.setItem('cc_cost_month', e.target.value); costsPage(); });
   const { data, error } = await sb.rpc('platform_costs', { p_month: pick });
   if (error) { $('#cbody').innerHTML = `<div class="card panel">${esc(error.message)}</div>`; return; }
   const rates = data.rates || {}, fixed = rates.fixed || {};
-  const rows = (data.rows || []).map(r => { const rev = +r.plan_revenue + +r.pack_revenue + +r.onetime_revenue, cost = +r.cost_texts + +r.cost_calls + +r.cost_numbers;
+  const rows = (data.rows || []).map(r => { const rev = +r.plan_revenue + +r.pack_revenue + +r.onetime_revenue, cost = COST_PARTS.reduce((a, [k]) => a + (+r[k] || 0), 0);
     return { ...r, rev, cost, profit: rev - cost }; }).sort((a, b) => b.cost - a.cost);
   const T = k => rows.reduce((a, r) => a + (+r[k] || 0), 0);
   const fixedTotal = Object.values(fixed).reduce((a, v) => a + (+v || 0), 0);
   const profit = T('profit') - fixedTotal;
   const stat = (n, l, c = '') => `<div class="rep-stat ${c}"><b>${n}</b><span>${l}</span></div>`;
   $('#cbody').innerHTML = `
-    <div class="rep-stats" style="margin-bottom:14px">${stat(usd(T('rev')), 'customers pay', 'ok')}${stat(usd(T('cost')), 'Twilio & numbers')}${stat(usd(fixedTotal), 'fixed costs')}${stat(usd(profit), 'left for you', profit < 0 ? 'bad' : 'ok')}</div>
+    <div class="rep-stats" style="margin-bottom:14px">${stat(usd(T('rev')), 'customers pay', 'ok')}${stat(usd(T('cost')), 'Twilio, Stripe & services')}${stat(usd(fixedTotal), 'fixed costs')}${stat(usd(profit), 'left for you', profit < 0 ? 'bad' : 'ok')}</div>
     <div class="table-wrap card"><table class="data"><thead><tr><th>Account</th><th>Plan</th><th>Pays</th><th>Texts</th><th>Calls</th><th>Incoming</th><th>Numbers</th><th>Costs you</th><th>Left</th></tr></thead><tbody>
     ${rows.map((r, i) => `<tr data-i="${i}" style="cursor:pointer"><td><b>${esc(r.name)}</b>${r.status && r.status !== 'ACTIVE' ? ` <span class="muted small">${esc(r.status)}</span>` : ''}</td>
       <td>${esc(r.plan || '—')}${r.period === 'yearly' ? ' <span class="muted small">(yearly ÷ 12)</span>' : ''}</td>
@@ -1265,8 +1271,8 @@ async function costsPage() {
       <td>${num(r.numbers)}</td><td>${usd(r.cost)}</td>
       <td style="white-space:nowrap;color:var(${r.profit < 0 ? '--bad' : '--ok'})"><b>${usd(r.profit)}</b>${r.rev ? `<div class="muted small">${Math.round(r.profit / r.rev * 100)}%</div>` : ''}</td></tr>
       <tr class="hidden" data-d="${i}"><td colspan="9" class="small" style="background:var(--cream)">
-        Texts ${usd(r.cost_texts)} · Calls and voicemail ${usd(r.cost_calls)} · Numbers ${usd(r.cost_numbers)} · Credits used ${num(r.credits_used)}<br>
-        ${num(r.texts_us)} US text segments, ${num(r.texts_ca)} Canadian, ${num(r.pictures_us)} + ${num(r.pictures_ca)} pictures, ${num(r.failed)} failed · ${num(r.call_minutes)} call minutes${+r.amd_calls ? `, ${num(r.amd_calls)} with voicemail detection` : ''} · ${num(r.calls_in)} incoming calls, ${num(r.office_forwards)} put through to the office · ${num(r.voicemail_minutes)} voicemail min (${num(r.transcribed_minutes)} typed out)</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No accounts.</td></tr>'}
+        ${COST_PARTS.map(([k, l]) => `${l} <b>${usd(r[k])}</b>`).join(' · ')} · Credits used ${num(r.credits_used)}<br>
+        ${num(r.texts_us)} US text segments, ${num(r.texts_ca)} Canadian, ${num(r.pictures_us)} + ${num(r.pictures_ca)} pictures, ${num(r.failed)} failed · ${num(r.call_minutes)} call minutes${+r.amd_calls ? `, ${num(r.amd_calls)} with voicemail detection` : ''} · ${num(r.calls_in)} incoming calls, ${num(r.office_forwards)} put through to the office${+r.conference_joins ? `, ${num(r.conference_joins)} conference callers` : ''} · ${num(r.voicemail_minutes)} voicemail min (${num(r.transcribed_minutes)} typed out) · ${esc(r.voice_tier || '')} voice${+r.preview_calls ? ` · ${num(r.preview_calls)} test calls` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No accounts.</td></tr>'}
     </tbody><tfoot><tr><th>Total</th><th></th><th>${usd(T('rev'))}</th><th>${num(T('texts_us') + T('texts_ca'))}</th><th>${num(T('call_minutes'))} min</th><th></th><th>${num(T('numbers'))}</th><th>${usd(T('cost'))}</th><th>${usd(T('profit'))}</th></tr></tfoot></table></div>
     <p class="muted small">Click an account for the details. Sample (demo) accounts are left out.</p>
     <form class="card panel" id="crates" style="margin-top:18px"><h3 style="margin-top:0">Prices used (USD)</h3>
