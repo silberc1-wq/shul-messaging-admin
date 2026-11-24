@@ -1127,9 +1127,11 @@ function callSoundBox(el, getText, opts = {}) {
       if (my !== seq || error) return;
       last = data;
       $('[data-cs-text]', el).innerHTML = (data.parts || []).map(p => `<span class="cs-${p.lang}" ${p.lang === 'he' ? 'dir="rtl" title="Read with the Hebrew voice"' : ''}>${esc(p.text)}</span>`).join(' ') || '<span class="muted">(nothing to read)</span>';
-      $('[data-cs-changes]', el).innerHTML = (data.changes || []).length
-        ? 'Said as: ' + data.changes.map(c => `<span class="chip">${esc(c.from)} → <b>${esc(c.to)}</b></span>`).join(' ') + ' · <a href="#pronunciation">change words</a>'
-        : ((data.parts || []).some(p => p.lang === 'he') ? 'Hebrew words without a set pronunciation are read with the Hebrew voice. <a href="#pronunciation">Add words</a>' : '');
+      const ch = (data.changes || []).map(c => `<span class="chip">${esc(c.from)} → <b>${esc(c.to)}</b></span>`).join(' ');
+      const gs = (data.guessed || []).map(c => `<span class="chip warn" title="Guessed: add it under Pronunciation to set the right way">${esc(c.from)} → <b>${esc(c.to)}?</b></span>`).join(' ');
+      $('[data-cs-changes]', el).innerHTML = (data.mode === 'hebrew' ? 'Read by the Hebrew voice. ' : '')
+        + (ch ? 'Said as: ' + ch + ' ' : '')
+        + (gs ? `<div style="margin-top:4px">⚠️ Not on your list, so it's a guess: ${gs} · <a href="#pronunciation">set the right way</a></div>` : (ch ? ' · <a href="#pronunciation">change words</a>' : ''));
     }, 500);
   };
   $('[data-cs-listen]', el).addEventListener('click', async () => {
@@ -1162,6 +1164,18 @@ async function pronunciationPage() {
     + `${JEW() ? `<div class="card panel" style="margin-bottom:16px"><label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
         <input type="checkbox" id="ashk" ${o.ashkenazi !== false ? 'checked' : ''} ${canEdit ? '' : 'disabled'} style="margin-top:4px">
         <span><b>Ashkenazi spellings for the parsha and holidays</b><br><span class="small muted">{parsha} and holiday names come out like "Bereishis", "Sukkos" (instead of "Bereshit", "Sukkot"). Takes effect when the times next refresh, within a day.</span></span></label></div>` : ''}
+      <div class="card panel" style="margin-bottom:16px"><h3 style="margin-top:0">Voice on phone calls</h3>
+        <div class="vchoice">
+          <label><input type="radio" name="cv" value="english" ${(o.call_voice || 'english') === 'english' ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> <span><b>One English voice, Ashkenazi words</b><br><span class="small muted">Recommended. Hebrew words are said the way you set below ("Shabbos", "Mincha"). A Hebrew word that isn't on the list is spelled out as a best guess, and the preview warns you so you can add it.</span></span></label>
+          <label><input type="radio" name="cv" value="hebrew" ${o.call_voice === 'hebrew' ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> <span><b>One Hebrew voice for everything</b><br><span class="small muted">The whole message is read in Hebrew (Israeli pronunciation). Best when your messages are all in Hebrew.</span></span></label>
+          <label><input type="radio" name="cv" value="mixed" ${o.call_voice === 'mixed' ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> <span><b>Switch voices</b><br><span class="small muted">English parts in the English voice, Hebrew parts in the Hebrew voice.</span></span></label>
+        </div>
+        <div class="grid2" style="margin-top:12px">
+          <div class="field"><label>English voice</label><select id="ven" ${canEdit ? '' : 'disabled'}>${[['Polly.Matthew-Neural', 'Matthew (American)'], ['Polly.Joey-Neural', 'Joey (American)'], ['Polly.Stephen-Neural', 'Stephen (American)'], ['Polly.Gregory-Neural', 'Gregory (American)'], ['Google.en-US-Neural2-J', 'James (American)'], ['Google.en-US-Neural2-D', 'David (American)'], ['Polly.Brian-Neural', 'Brian (British)'], ['Polly.Arthur-Neural', 'Arthur (British)']].map(([v, l]) => `<option value="${v}" ${o.voice_en === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          <div class="field"><label>Hebrew voice</label><select id="vhe" ${canEdit ? '' : 'disabled'}>${[['Google.he-IL-Standard-B', 'Hebrew man 1'], ['Google.he-IL-Standard-D', 'Hebrew man 2'], ['Google.he-IL-Wavenet-B', 'Hebrew man 3 (more natural)'], ['Google.he-IL-Wavenet-D', 'Hebrew man 4 (more natural)']].map(([v, l]) => `<option value="${v}" ${o.voice_he === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        </div>
+        <p class="small muted" style="margin:0">To compare voices, pick one, then use "📞 Call me to hear it" below. Every voice is male.</p>
+      </div>
       <div class="card panel" style="margin-bottom:16px"><h3 style="margin-top:0">Try it</h3>
         <textarea id="prtest" rows="3" style="width:100%" placeholder="Type in English, Hebrew, or both, e.g. מנחה בשבת 4:15, Kiddush after davening">מנחה בשבת 4:15. Good Shabbos! מזל טוב to the Cohen family.</textarea>
         <div id="prbox" class="callbox" style="margin-top:10px"></div></div>
@@ -1179,6 +1193,10 @@ async function pronunciationPage() {
   }
   const box = callSoundBox($('#prbox'), () => $('#prtest').value);
   $('#prtest').addEventListener('input', box.refresh);
+  const saveVoice = async (vals) => { const r = await sb.from('organizations').update(vals).eq('id', o.id); if (r.error) return toast(friendlyError(r.error), true); Object.assign(o, vals); toast('Saved'); box.refresh(); };
+  $$('input[name=cv]').forEach(x => x.addEventListener('change', () => saveVoice({ call_voice: x.value })));
+  $('#ven')?.addEventListener('change', e => saveVoice({ voice_en: e.target.value }));
+  $('#vhe')?.addEventListener('change', e => saveVoice({ voice_he: e.target.value }));
   $('#ashk')?.addEventListener('change', async e => check(await sb.from('organizations').update({ ashkenazi: e.target.checked }).eq('id', o.id), 'Saved'));
   $('#pradd')?.addEventListener('submit', async e => {
     e.preventDefault(); const word = e.target.word.value.trim(), say = e.target.say.value.trim(); if (!word || !say) return;
