@@ -1244,10 +1244,13 @@ const COST_PARTS = [['cost_texts', 'Texts'], ['cost_calls', 'Call minutes'], ['c
   ['cost_voicemail', 'Voicemail & typing it out'], ['cost_numbers', 'Phone numbers'], ['cost_card', 'Card fees (Stripe)']];
 async function costsPage() {
   if (!S.isPlatform) { $('#main').innerHTML = head('Costs', '') + '<div class="card panel">Only the platform owner can see this.</div>'; return; }
-  const usd = (n, d = 2) => (n < 0 ? '−$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+  // costs are rounded UP once, only for showing; small amounts keep their fraction of a cent ($0.008)
+  const usd = (n, d = 2, down = false) => { n = +n || 0; const f = 10 ** d, v = (down ? Math.floor : Math.ceil)(Math.round(n * f * 1e6) / 1e6) / f;
+    return (v < 0 ? '−$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); };
+  const usdFine = n => Math.abs(+n || 0) < 1 && Math.round((+n || 0) * 100) !== (+n || 0) * 100 ? usd(n, 4).replace(/0+$/, '').replace(/\.(\d)$/, '.$10') : usd(n);
   const months = [...Array(12)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); return d.toISOString().slice(0, 7) + '-01'; });
   const pick = sessionStorage.getItem('cc_cost_month') || months[0];
-  $('#main').innerHTML = head('Costs', 'What each account costs you this month, and what it pays: texts, calls, the spoken voice, incoming calls, voicemail, phone numbers and card fees. Worked out from what was actually sent, using the prices at the bottom, and always rounded up to the next cent. Your Twilio and Stripe statements are the final word; incoming call length is a guess.')
+  $('#main').innerHTML = head('Costs', 'What each account costs you this month, and what it pays: texts, calls, the spoken voice, incoming calls, voicemail, phone numbers and card fees. Worked out from what was actually sent, using the prices at the bottom. Fractions of a cent are kept and only the amount shown is rounded up, so small costs aren't inflated. Your Twilio and Stripe statements are the final word; incoming call length is a guess.')
     + `<div class="toolbar" style="padding:0;margin:0 0 12px"><select id="cm">${months.map(m => `<option value="${m}" ${m === pick ? 'selected' : ''}>${new Date(m + 'T12:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>`).join('')}</select></div><div id="cbody"><p class="muted">Loading…</p></div>`;
   $('#cm').addEventListener('change', e => { sessionStorage.setItem('cc_cost_month', e.target.value); costsPage(); });
   const { data, error } = await sb.rpc('platform_costs', { p_month: pick });
@@ -1260,7 +1263,7 @@ async function costsPage() {
   const profit = T('profit') - fixedTotal;
   const stat = (n, l, c = '') => `<div class="rep-stat ${c}"><b>${n}</b><span>${l}</span></div>`;
   $('#cbody').innerHTML = `
-    <div class="rep-stats" style="margin-bottom:14px">${stat(usd(T('rev')), 'customers pay', 'ok')}${stat(usd(T('cost')), 'Twilio, Stripe & services')}${stat(usd(fixedTotal), 'fixed costs')}${stat(usd(profit), 'left for you', profit < 0 ? 'bad' : 'ok')}</div>
+    <div class="rep-stats" style="margin-bottom:14px">${stat(usd(T('rev')), 'customers pay', 'ok')}${stat(usd(T('cost')), 'Twilio, Stripe & services')}${stat(usd(fixedTotal), 'fixed costs')}${stat(usd(profit, 2, true), 'left for you', profit < 0 ? 'bad' : 'ok')}</div>
     <div class="table-wrap card"><table class="data"><thead><tr><th>Account</th><th>Plan</th><th>Pays</th><th>Texts</th><th>Calls</th><th>Incoming</th><th>Numbers</th><th>Costs you</th><th>Left</th></tr></thead><tbody>
     ${rows.map((r, i) => `<tr data-i="${i}" style="cursor:pointer"><td><b>${esc(r.name)}</b>${r.status && r.status !== 'ACTIVE' ? ` <span class="muted small">${esc(r.status)}</span>` : ''}</td>
       <td>${esc(r.plan || '—')}${r.period === 'yearly' ? ' <span class="muted small">(yearly ÷ 12)</span>' : ''}</td>
@@ -1269,11 +1272,11 @@ async function costsPage() {
       <td>${num(r.call_minutes)} min<div class="muted small">${num(r.calls)} calls</div></td>
       <td>${num(r.texts_in)} texts<div class="muted small">${num(r.calls_in)} calls</div></td>
       <td>${num(r.numbers)}</td><td>${usd(r.cost)}</td>
-      <td style="white-space:nowrap;color:var(${r.profit < 0 ? '--bad' : '--ok'})"><b>${usd(r.profit)}</b>${r.rev ? `<div class="muted small">${Math.round(r.profit / r.rev * 100)}%</div>` : ''}</td></tr>
+      <td style="white-space:nowrap;color:var(${r.profit < 0 ? '--bad' : '--ok'})"><b>${usd(r.profit, 2, true)}</b>${r.rev ? `<div class="muted small">${Math.round(r.profit / r.rev * 100)}%</div>` : ''}</td></tr>
       <tr class="hidden" data-d="${i}"><td colspan="9" class="small" style="background:var(--cream)">
-        ${COST_PARTS.map(([k, l]) => `${l} <b>${usd(r[k])}</b>`).join(' · ')} · Credits used ${num(r.credits_used)}<br>
+        ${COST_PARTS.map(([k, l]) => `${l} <b>${usdFine(r[k])}</b>`).join(' · ')} · Credits used ${num(r.credits_used)}<br>
         ${num(r.texts_us)} US text segments, ${num(r.texts_ca)} Canadian, ${num(r.pictures_us)} + ${num(r.pictures_ca)} pictures, ${num(r.failed)} failed · ${num(r.call_minutes)} call minutes${+r.amd_calls ? `, ${num(r.amd_calls)} with voicemail detection` : ''} · ${num(r.calls_in)} incoming calls, ${num(r.office_forwards)} put through to the office${+r.conference_joins ? `, ${num(r.conference_joins)} conference callers` : ''} · ${num(r.voicemail_minutes)} voicemail min (${num(r.transcribed_minutes)} typed out) · ${esc(r.voice_tier || '')} voice${+r.preview_calls ? ` · ${num(r.preview_calls)} test calls` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No accounts.</td></tr>'}
-    </tbody><tfoot><tr><th>Total</th><th></th><th>${usd(T('rev'))}</th><th>${num(T('texts_us') + T('texts_ca'))}</th><th>${num(T('call_minutes'))} min</th><th></th><th>${num(T('numbers'))}</th><th>${usd(T('cost'))}</th><th>${usd(T('profit'))}</th></tr></tfoot></table></div>
+    </tbody><tfoot><tr><th>Total</th><th></th><th>${usd(T('rev'))}</th><th>${num(T('texts_us') + T('texts_ca'))}</th><th>${num(T('call_minutes'))} min</th><th></th><th>${num(T('numbers'))}</th><th>${usd(T('cost'))}</th><th>${usd(T('profit'), 2, true)}</th></tr></tfoot></table></div>
     <p class="muted small">Click an account for the details. Sample (demo) accounts are left out.</p>
     <form class="card panel" id="crates" style="margin-top:18px"><h3 style="margin-top:0">Prices used (USD)</h3>
       <div class="grid2">${RATE_LABELS.map(([k, l]) => `<div class="field"><label>${esc(l)}</label><input type="number" step="any" name="${k}" value="${esc(rates[k] ?? '')}"></div>`).join('')}</div>
