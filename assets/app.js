@@ -1045,7 +1045,8 @@ const SETTINGS_COLS = [
   { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
-  { f: 'detect_voicemail', label: 'Tell apart people and answering machines on calls', type: 'bool', hint: 'The delivery report then shows "Answered" vs "Voicemail". Costs about ¾ cent extra per call. If off, a call picked up by voicemail counts as answered.' },
+  { f: 'detect_voicemail', label: 'Leave the whole message on voicemail', type: 'bool', hint: 'Waits for the voicemail beep, so the full message is saved on the member\'s voicemail, and the delivery report shows "Answered" vs "Voicemail". People who pick up hear it 2 to 3 seconds later. Costs about ¾ cent extra per call.' },
+  { f: 'retry_calls', label: 'Call again if there\'s no answer', type: 'bool', hint: 'Members who didn\'t pick up or were busy get one more call about 15 minutes later (never during quiet hours, unless it\'s an emergency).' },
   { f: 'allow_auto_signup', label: 'Add new signups automatically', type: 'bool', hint: 'Applies to text JOIN and phone signups. If off, they appear in Signup Requests for approval.' },
   { f: 'contact_person', label: 'Main contact person' }, { f: 'contact_phone', label: 'Main contact phone', type: 'phone' }, { f: 'contact_email', label: 'Main contact email', type: 'email' },
 ];
