@@ -1047,7 +1047,7 @@ const SETTINGS_COLS = [
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
   { f: 'keypad_join', label: 'Callers can pick a list to join (press 4)', type: 'bool', hint: 'After pressing 4, callers hear your groups ("For Women, press 1…") and join the one they pick. Members can also add themselves to another list this way.' },
-  { f: 'transcribe_voicemail', label: 'Turn voicemails into text', type: 'bool', hint: 'Voicemails are typed out automatically (English only, up to 2 minutes) and the text is emailed to you and shown under Replies. Costs about 5¢ per voicemail minute.' },
+  { f: 'transcribe_voicemail', label: 'Turn voicemails into text', type: 'bool', hint: 'Voicemails are typed out automatically (English, Hebrew or Yiddish) a minute after they come in. The text is emailed to you and shown under Replies.' },
   { f: 'private_vm_label', label: 'Private voicemail box for (press 6)', hint: 'Optional, e.g. "the Rabbi". Callers press 6 to leave a message only this person sees. Leave empty to turn off.' },
   { f: 'private_vm_email', label: 'Private voicemails go to email', type: 'email', hint: 'Only this person sees private voicemails on the admin site, when they log in with this email.' },
   { f: 'private_vm_phone', label: 'Private voicemails go to phone', type: 'phone', hint: 'Optional. Gets a text with a link to listen.' },
