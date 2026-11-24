@@ -1229,6 +1229,65 @@ async function pronunciationPage() {
 }
 
 /* ---------- one-time sends (platform owner) ---------- */
+const RATE_LABELS = [
+  ['sms', 'Text sent (per segment, Twilio)'], ['carrier_us', 'Carrier fee per text, US'], ['carrier_ca', 'Carrier fee per text, Canada'],
+  ['mms', 'Picture text sent (Twilio)'], ['mms_carrier_us', 'Carrier fee per picture, US'], ['mms_carrier_ca', 'Carrier fee per picture, Canada'],
+  ['failed_msg', 'Failed text fee'], ['sms_in', 'Text received'], ['call_out_min', 'Outgoing call, per minute'], ['call_in_min', 'Incoming call, per minute'],
+  ['in_call_minutes_guess', 'Guess: minutes per incoming call'], ['amd_call', 'Voicemail detection, per call'], ['recording_min', 'Voicemail recording, per minute'],
+  ['transcribe_min', 'Voicemail to text (Groq), per minute'], ['number_month', 'Phone number, per month']];
+async function costsPage() {
+  if (!S.isPlatform) { $('#main').innerHTML = head('Costs', '') + '<div class="card panel">Only the platform owner can see this.</div>'; return; }
+  const usd = (n, d = 2) => (n < 0 ? '−$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const months = [...Array(12)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); return d.toISOString().slice(0, 7) + '-01'; });
+  const pick = sessionStorage.getItem('cc_cost_month') || months[0];
+  $('#main').innerHTML = head('Costs', 'What each account costs you this month, and what it pays. Costs are worked out from what was actually sent, using the prices at the bottom. Your Twilio bill is the final word; incoming call minutes are a guess.')
+    + `<div class="toolbar" style="padding:0;margin:0 0 12px"><select id="cm">${months.map(m => `<option value="${m}" ${m === pick ? 'selected' : ''}>${new Date(m + 'T12:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>`).join('')}</select></div><div id="cbody"><p class="muted">Loading…</p></div>`;
+  $('#cm').addEventListener('change', e => { sessionStorage.setItem('cc_cost_month', e.target.value); costsPage(); });
+  const { data, error } = await sb.rpc('platform_costs', { p_month: pick });
+  if (error) { $('#cbody').innerHTML = `<div class="card panel">${esc(error.message)}</div>`; return; }
+  const rates = data.rates || {}, fixed = rates.fixed || {};
+  const rows = (data.rows || []).map(r => { const rev = +r.plan_revenue + +r.pack_revenue + +r.onetime_revenue, cost = +r.cost_texts + +r.cost_calls + +r.cost_numbers;
+    return { ...r, rev, cost, profit: rev - cost }; }).sort((a, b) => b.cost - a.cost);
+  const T = k => rows.reduce((a, r) => a + (+r[k] || 0), 0);
+  const fixedTotal = Object.values(fixed).reduce((a, v) => a + (+v || 0), 0);
+  const profit = T('profit') - fixedTotal;
+  const stat = (n, l, c = '') => `<div class="rep-stat ${c}"><b>${n}</b><span>${l}</span></div>`;
+  $('#cbody').innerHTML = `
+    <div class="rep-stats" style="margin-bottom:14px">${stat(usd(T('rev')), 'customers pay', 'ok')}${stat(usd(T('cost')), 'Twilio & numbers')}${stat(usd(fixedTotal), 'fixed costs')}${stat(usd(profit), 'left for you', profit < 0 ? 'bad' : 'ok')}</div>
+    <div class="table-wrap card"><table class="data"><thead><tr><th>Account</th><th>Plan</th><th>Pays</th><th>Texts</th><th>Calls</th><th>Incoming</th><th>Numbers</th><th>Costs you</th><th>Left</th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr data-i="${i}" style="cursor:pointer"><td><b>${esc(r.name)}</b>${r.status && r.status !== 'ACTIVE' ? ` <span class="muted small">${esc(r.status)}</span>` : ''}</td>
+      <td>${esc(r.plan || '—')}${r.period === 'yearly' ? ' <span class="muted small">(yearly ÷ 12)</span>' : ''}</td>
+      <td>${usd(r.rev)}${+r.pack_revenue ? `<div class="muted small">incl. ${usd(r.pack_revenue)} credit packs</div>` : ''}${+r.onetime_revenue ? `<div class="muted small">incl. ${usd(r.onetime_revenue)} one-time</div>` : ''}</td>
+      <td>${num(+r.texts_us + +r.texts_ca)}${+r.texts_ca ? `<div class="muted small">${num(r.texts_ca)} to Canada</div>` : ''}${+r.pictures_us + +r.pictures_ca ? `<div class="muted small">+ ${num(+r.pictures_us + +r.pictures_ca)} pictures</div>` : ''}</td>
+      <td>${num(r.call_minutes)} min<div class="muted small">${num(r.calls)} calls</div></td>
+      <td>${num(r.texts_in)} texts<div class="muted small">${num(r.calls_in)} calls</div></td>
+      <td>${num(r.numbers)}</td><td>${usd(r.cost)}</td>
+      <td style="white-space:nowrap;color:var(${r.profit < 0 ? '--bad' : '--ok'})"><b>${usd(r.profit)}</b>${r.rev ? `<div class="muted small">${Math.round(r.profit / r.rev * 100)}%</div>` : ''}</td></tr>
+      <tr class="hidden" data-d="${i}"><td colspan="9" class="small" style="background:var(--cream)">
+        Texts ${usd(r.cost_texts)} · Calls and voicemail ${usd(r.cost_calls)} · Numbers ${usd(r.cost_numbers)} · Credits used ${num(r.credits_used)}<br>
+        ${num(r.texts_us)} US text segments, ${num(r.texts_ca)} Canadian, ${num(r.pictures_us)} + ${num(r.pictures_ca)} pictures, ${num(r.failed)} failed · ${num(r.call_minutes)} call minutes${+r.amd_calls ? `, ${num(r.amd_calls)} with voicemail detection` : ''} · ${num(r.calls_in)} incoming calls, ${num(r.office_forwards)} put through to the office · ${num(r.voicemail_minutes)} voicemail min (${num(r.transcribed_minutes)} typed out)</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No accounts.</td></tr>'}
+    </tbody><tfoot><tr><th>Total</th><th></th><th>${usd(T('rev'))}</th><th>${num(T('texts_us') + T('texts_ca'))}</th><th>${num(T('call_minutes'))} min</th><th></th><th>${num(T('numbers'))}</th><th>${usd(T('cost'))}</th><th>${usd(T('profit'))}</th></tr></tfoot></table></div>
+    <p class="muted small">Click an account for the details. Sample (demo) accounts are left out.</p>
+    <form class="card panel" id="crates" style="margin-top:18px"><h3 style="margin-top:0">Prices used (USD)</h3>
+      <div class="grid2">${RATE_LABELS.map(([k, l]) => `<div class="field"><label>${esc(l)}</label><input type="number" step="any" name="${k}" value="${esc(rates[k] ?? '')}"></div>`).join('')}</div>
+      <h3>Fixed monthly costs</h3><p class="muted small" style="margin-top:-6px">Costs that don't depend on any one account: Supabase, the n8n server, the texting campaign fee, and so on.</p>
+      <div id="cfixed">${Object.entries(fixed).map(([k, v]) => `<div class="cfx" style="display:flex;gap:8px;margin-bottom:6px"><input value="${esc(k)}" placeholder="What" style="flex:2"><input type="number" step="any" value="${esc(v)}" placeholder="$ / month" style="flex:1"></div>`).join('')}</div>
+      <button type="button" class="btn secondary sm" id="cfadd">+ Add a fixed cost</button>
+      <div style="display:flex;justify-content:flex-end;border-top:1px solid var(--line);padding-top:14px;margin-top:14px"><button class="btn">Save prices</button></div></form>`;
+  $$('#cbody tr[data-i]').forEach(tr => tr.addEventListener('click', () => $(`#cbody tr[data-d="${tr.dataset.i}"]`).classList.toggle('hidden')));
+  const addFx = () => { const d = document.createElement('div'); d.className = 'cfx'; d.style.cssText = 'display:flex;gap:8px;margin-bottom:6px';
+    d.innerHTML = '<input placeholder="What, e.g. Supabase Pro" style="flex:2"><input type="number" step="any" placeholder="$ / month" style="flex:1">'; $('#cfixed').appendChild(d); };
+  if (!Object.keys(fixed).length) addFx();
+  $('#cfadd').addEventListener('click', addFx);
+  $('#crates').addEventListener('submit', async e => {
+    e.preventDefault(); const out = {};
+    for (const [k] of RATE_LABELS) { const v = e.target.elements[k].value.trim(); if (v !== '') out[k] = Number(v); }
+    out.fixed = {}; $$('#cfixed .cfx').forEach(d => { const [a, b] = d.querySelectorAll('input'); if (a.value.trim() && b.value !== '') out.fixed[a.value.trim()] = Number(b.value); });
+    check(await sb.from('app_settings').update({ value: JSON.stringify(out) }).eq('key', 'cost_rates'), 'Prices saved');
+    costsPage();
+  });
+}
+
 async function onetimePage() {
   if (!S.isPlatform) { $('#main').innerHTML = head('One-time sends', '') + '<div class="card panel">Only the platform owner can use this.</div>'; return; }
   const [{ data: orgs }, { data: sets }, { data: jobs }] = await Promise.all([
@@ -1513,6 +1572,7 @@ function deliveryLine(x) {
   if (x.replies) parts.push(`↩️ ${num(x.replies)} replied`);
   return `<div class="small" style="line-height:1.5;min-width:190px">${parts.join('<br>')}</div>`;
 }
+const caExtra = (reach, per) => reach && reach.sms_ca ? Math.ceil(reach.sms_ca * per * ((+reach.ca_rate || 1) - 1)) : 0;
 const RESULT_LABEL = { delivered: ['Delivered', 'ok'], failed: ['Failed', 'bad'], pending: ['Waiting', 'warn'], answered: ['Answered', 'ok'],
   voicemail: ['Voicemail', 'warn'], no_answer: ['No answer', 'bad'], emailed: ['Emailed', 'ok'] };
 const ERR_LABEL = { '30003': 'Phone off or out of service', '30004': 'Blocked by the person', '30005': 'Number does not exist', '30006': 'Landline or can\'t get texts',
@@ -2075,7 +2135,7 @@ async function sendPage() {
       ${reach.skipped_dnd ? `<div>Skipped</div><div class="small" style="color:var(--warn)">${num(reach.skipped_dnd)} call-only (quiet hours)</div>` : ''}
       ${reach.skipped_call_only ? `<div>Left out</div><div class="small" style="color:var(--warn)">${num(reach.skipped_call_only)} set to CALL (polls are text only)</div>` : ''}
       ${pollOn() && reach.poll_calls ? `<div>Phone voting</div><div class="small muted">${num(reach.poll_calls)} call-only members get a call and vote by pressing 1, 2, 3…</div>` : ''}
-      <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls)}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''})</span>${flyer && calls ? `<div class="small muted">${msg ? 'Call members hear your typed message only, never the flyer.' : 'No message typed: only texting members get the flyer, so call members won\'t be called.'}</div>` : ''}</div>
+      <div>Credits this uses</div><div><b>${num(sms * (asPicture() ? 3 : i.segments) + calls + caExtra(reach, asPicture() ? 3 : i.segments))}</b> <span class="muted small">(${num(sms)} ${asPicture() ? 'picture texts × 3' : 'texts × ' + i.segments}${calls ? ` + ${num(calls)} calls` : ''}${caExtra(reach, asPicture() ? 3 : i.segments) ? ` + ${num(caExtra(reach, asPicture() ? 3 : i.segments))} for ${num(reach.sms_ca)} Canadian phones` : ''})</span>${flyer && calls ? `<div class="small muted">${msg ? 'Call members hear your typed message only, never the flyer.' : 'No message typed: only texting members get the flyer, so call members won\'t be called.'}</div>` : ''}</div>
       ${reach.test_mode ? '<div>Note</div><div class="small" style="color:var(--warn)">Test mode: only test contacts</div>' : ''}` : '<div>Recipients</div><div class="muted">…</div>';
     const bc = $('#badchars');
     if (i.bad.length && i.bad.some(c => SMART[c] !== undefined)) {
@@ -2280,12 +2340,12 @@ async function sendPage() {
     const i = segInfo(personalize(full, 'Sarah Cohen')), mode = f.mode.value; const callsOut = textOnly ? 0 : reach.calls;
     const when = later() ? sendAt() : null;
     if (later() && (!when || when < new Date(Date.now() - 60e3))) return toast('Pick a date and time in the future for the scheduled message.', true);
-    const needNow = reach.sms * (asPicture() ? 3 : i.segments) + callsOut, cs = await creditsInfo();
+    const needNow = reach.sms * (asPicture() ? 3 : i.segments) + callsOut + caExtra(reach, asPicture() ? 3 : i.segments), cs = await creditsInfo();
     if (cs.left != null && needNow > cs.left && mode !== 'EMERGENCY') return creditsModal(needNow, Math.max(cs.left, 0));
     const whenLine = when ? `<div style="margin:0 0 8px;padding:8px 10px;border-radius:8px;background:var(--sky-soft)">⏰ Goes out <b>${esc(fmtDT(when.toISOString()))}</b>${JEW() && hebDate(asDayUTC(when.toISOString())) ? ' · ' + esc(hebDate(asDayUTC(when.toISOString()))) : ''}</div>` : '';
     const ok = await confirmBox(when ? (poll ? '📊 Schedule this poll?' : '⏰ Schedule this message?') : poll ? '📊 Send this poll?' : mode === 'EMERGENCY' ? '🚨 Send emergency message?' : 'Send this message?',
       whenLine +
-      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''}${!poll && ['PREF', 'EMERGENCY'].includes(mode) && reach.email ? ` + ${num(reach.email)} emails` : ''} · ${num(reach.sms * (asPicture() ? 3 : i.segments) + callsOut)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
+      `<b>${esc(f.group.value)}</b> · ${num(reach.sms)} texts${callsOut ? ` + ${num(callsOut)} calls` : ''}${!poll && ['PREF', 'EMERGENCY'].includes(mode) && reach.email ? ` + ${num(reach.email)} emails` : ''} · ${num(needNow)} credits<br><br>${asPicture() ? `<img src="${esc($('#flyerimg').src)}" style="max-width:120px;max-height:150px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px"><br>` : ''}${flyer && !asPicture() ? `📎 ${esc(flyer.name)} (sent as a link)<br>` : ''}
        <span style="white-space:pre-wrap;display:block;background:#f4f2ec;padding:10px 12px;border-radius:10px">${esc(personalize(full, 'Sarah Cohen'))}</span>`, when ? 'Schedule' : 'Send now', false);
     if (!ok) return;
     $('#sendbtn').disabled = true;
@@ -2378,7 +2438,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation', 'p_onetime'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation', 'p_onetime', 'p_costs'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   $$('[data-hebpref]').forEach(b => b.classList.toggle('hidden', !JEW()));
@@ -2402,6 +2462,7 @@ async function render() {
   if (S.view === 'samples') return samplesPage();
   if (S.view === 'pronunciation') return pronunciationPage();
   if (S.view === 'p_onetime') return onetimePage();
+  if (S.view === 'p_costs') return costsPage();
   return tablePage(S.view);
 }
 
