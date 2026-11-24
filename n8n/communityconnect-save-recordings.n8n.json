@@ -95,7 +95,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Config (recordings)').first().json;\nconst b = $('Recording to save (from Supabase)').first().json.body;\nconst url = /\\.(mp3|wav)$/i.test(b.url) ? b.url : b.url + '.mp3';\nreturn [{ json: { job: b.job, path: b.path, url,\n  publicUrl: cfg.supabaseUrl + '/storage/v1/object/public/recordings/' + b.path } }];\n"
+        "jsCode": "const cfg = $('Config (recordings)').first().json;\nconst b = $('Recording to save (from Supabase)').first().json.body;\nconst url = /\\.(mp3|wav)$/i.test(b.url) ? b.url : b.url + '.mp3';\nconst base = cfg.supabaseUrl + '/storage/v1/object/public/recordings/';\nconst cleanPath = b.path.replace(/\\.mp3$/i, '') + '-clean.mp3';\nreturn [{ json: { job: b.job, path: b.path, url, clean: b.clean === true, cleanPath,\n  publicUrl: base + b.path, cleanUrl: base + cleanPath } }];\n"
       },
       "name": "Prepare",
       "type": "n8n-nodes-base.code",
@@ -192,8 +192,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1320,
-        -100
+        1540,
+        -220
       ],
       "id": "60f62514-56ee-4483-af64-7899990eac99",
       "credentials": {
@@ -205,8 +205,8 @@
     },
     {
       "parameters": {
-        "content": "## CommunityConnect: save recordings + voicemail to text\n\nCopies each voicemail and phone recording from Twilio into Supabase storage, and types voicemails out with Groq.\n\nNo passwords in this workflow. Credentials used:\n- **CommunityConnect dispatch secret** (Header Auth) on the first step.\n- **Twilio account** on Download from Twilio.\n- **Groq (voicemail to text)**: Header Auth, Name `Authorization`, Value `Bearer ` + your Groq key (console.groq.com → API Keys).\n- **Supabase** on the Supabase steps.\n\nTo use OpenAI instead of Groq: change transcribeUrl and transcribeModel in Config (recordings), and the Value of the credential to `Bearer ` + your OpenAI key.",
-        "height": 640,
+        "content": "## CommunityConnect: save recordings, clean them, voicemail to text\n\n- Copies every phone recording from Twilio into Supabase storage.\n- **Recorded announcements** are also cleaned by ElevenLabs (background noise removed). Both copies are kept: calls play the cleaned one, and History shows both.\n- **Voicemails** are typed out by Groq.\n\nIf cleaning fails, the original is used, so nothing is held up.\n\nNo passwords in this workflow. Credentials:\n- **CommunityConnect dispatch secret** on the first step\n- **Twilio account** on Download from Twilio\n- **ElevenLabs**: Header Auth, Name `xi-api-key`, Value = your ElevenLabs API key\n- **Groq (voicemail to text)** on Transcribe voicemail\n- **Supabase** on the Supabase steps",
+        "height": 520,
         "width": 520,
         "color": 5
       },
@@ -249,7 +249,7 @@
       "typeVersion": 2.2,
       "position": [
         1100,
-        120
+        380
       ]
     },
     {
@@ -262,7 +262,7 @@
       "typeVersion": 2,
       "position": [
         1320,
-        120
+        380
       ]
     },
     {
@@ -304,7 +304,7 @@
       "typeVersion": 4.2,
       "position": [
         1540,
-        120
+        380
       ],
       "onError": "continueRegularOutput",
       "retryOnFail": true,
@@ -332,7 +332,196 @@
       "typeVersion": 4.2,
       "position": [
         1760,
-        120
+        380
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "UJKemDkIPKxRY4nb",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "3136fdb9-9dcc-4bb3-b4e3-c4ad545e6bf1",
+              "leftValue": "={{ $('Prepare').first().json.clean === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c79364b4-7583-41c0-ba9d-a4360c0dc0cf",
+      "name": "Clean it?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The original audio, to send to ElevenLabs\nconst bin = $('Download from Twilio').first().binary;\nbin.data.fileName = 'recording.mp3';\nbin.data.mimeType = 'audio/mpeg';\nreturn [{ json: {}, binary: bin }];\n"
+      },
+      "id": "fddefcf4-871e-4076-807d-3a0c911ec23f",
+      "name": "Take the audio again",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/audio-isolation",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "8da8ac0e-2c94-45cd-838e-08ac3890ad8e",
+      "name": "Clean (ElevenLabs)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        -40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "ElevenLabs"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "f492c1d7-d8dc-436c-8db7-6bb0568d21e8",
+              "leftValue": "={{ !!($binary && $binary.data && /audio|mpeg|octet/.test($binary.data.mimeType || '')) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e44f8f53-2bf3-4950-9532-e4a14aff2ed2",
+      "name": "Cleaned OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (recordings)').first().json.supabaseUrl }}/storage/v1/object/recordings/{{ $('Prepare').first().json.cleanPath }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-upsert",
+              "value": "true"
+            },
+            {
+              "name": "Content-Type",
+              "value": "audio/mpeg"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "42a14749-9b14-47e8-8cea-e1feb14d28eb",
+      "name": "Save cleaned copy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        -80
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "UJKemDkIPKxRY4nb",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (recordings)').first().json.supabaseUrl }}/rest/v1/rpc/finish_recording_job",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_job: $('Prepare').first().json.job, p_url: $('Prepare').first().json.publicUrl, p_clean: $json.error ? null : $('Prepare').first().json.cleanUrl }) }}",
+        "options": {}
+      },
+      "id": "7c81e850-e7af-460d-909f-71a983eba719",
+      "name": "Use both copies (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -80
       ],
       "credentials": {
         "supabaseApi": {
@@ -396,7 +585,7 @@
       "main": [
         [
           {
-            "node": "Use the saved copy (Supabase)",
+            "node": "Clean it?",
             "type": "main",
             "index": 0
           }
@@ -443,6 +632,75 @@
         [
           {
             "node": "Save the text (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean it?": {
+      "main": [
+        [
+          {
+            "node": "Take the audio again",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use the saved copy (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take the audio again": {
+      "main": [
+        [
+          {
+            "node": "Clean (ElevenLabs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean (ElevenLabs)": {
+      "main": [
+        [
+          {
+            "node": "Cleaned OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleaned OK?": {
+      "main": [
+        [
+          {
+            "node": "Save cleaned copy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use the saved copy (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save cleaned copy": {
+      "main": [
+        [
+          {
+            "node": "Use both copies (Supabase)",
             "type": "main",
             "index": 0
           }

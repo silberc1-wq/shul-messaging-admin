@@ -95,6 +95,8 @@ const pill = v => { if (v == null || v === '') return ''; const u = String(v).to
 const isTwilioRec = u => /^https:\/\/api\.twilio\.com\//.test(u || '');
 const audioLink = (u, label) => !/^https:\/\//.test(u || '') ? '' : isTwilioRec(u) ? '<span class="small muted">⏳ Saving recording…</span>'
   : `<a class="small" href="${esc(u)}" target="_blank" rel="noopener">${label}</a>`;
+// a cleaned recording keeps its original too: play or download either one
+const recPair = r => `<div class="small" style="margin-top:4px">🎙️ <a href="${esc(r.audio_url)}" target="_blank" rel="noopener">▶ Cleaned</a> (<a href="${esc(r.audio_url)}" download>download</a>) · <a href="${esc(r.original_audio_url)}" target="_blank" rel="noopener">▶ Original</a> (<a href="${esc(r.original_audio_url)}" download>download</a>)</div>`;
 const audioPlayer = u => !/^https:\/\//.test(u || '') ? '' : isTwilioRec(u) ? '<span class="small muted">⏳ Saving recording…</span>'
   : `<audio controls preload="none" src="${esc(u)}" style="height:34px;width:220px;max-width:100%"></audio><div><a class="small" href="${esc(u)}" target="_blank" rel="noopener" download>Download</a></div>`;
 
@@ -273,7 +275,7 @@ const VIEWS = {
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
       { f: 'group_name', label: 'Group', render: v => `<span class="chip">${esc(v)}</span>` },
       { f: 'message', label: 'Message', render: (v, r) => `<div class="small" style="min-width:150px;max-width:220px;overflow-wrap:anywhere">${esc((v || '').slice(0, 90))}${(v || '').length > 90 ? '…' : ''}</div>`
-          + [audioLink(r.audio_url, '▶ Play recording'),
+          + [r.original_audio_url ? recPair(r) : audioLink(r.audio_url, '▶ Play recording'),
              /^https:\/\//.test(r.media_url || '') ? `<a class="small" href="${esc(r.media_url)}" target="_blank" rel="noopener">🖼 View flyer</a>` : ''].filter(Boolean).join(' · ') },
       { f: 'audio_url', label: 'Recording', table: false }, { f: 'media_url', label: 'Flyer', table: false },
       { f: 'recipient_count', label: 'Recipients', type: 'number' }, { f: '_rep', label: 'Delivery', render: (v, r) => `<div style="min-width:150px">${deliveryLine(r._rep)}</div><div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:8px">${VIEWS.history.rowActions(r).map((a, i) => `<button class="btn ${a.label.includes('Report') ? '' : 'secondary'} sm" data-act="${i}">${esc(a.label)}</button>`).join('')}</div>` },
@@ -1047,6 +1049,7 @@ const SETTINGS_COLS = [
   { f: 'office_phone', label: 'Office phone (callers press 1)', type: 'phone', hint: 'When someone calls your number, "press 1" connects them here. Leave empty to use the forwarding phone above.' },
   { f: 'allow_callback_voicemail', label: 'Callers can leave a voicemail (press 2)', type: 'bool' },
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
+  { f: 'clean_recordings', label: 'Clean recorded announcements', type: 'bool', hint: 'Background noise is removed from messages recorded by phone before they go out. The original is kept too; History lets you play or download either one.' },
   { f: 'keypad_join', label: 'Callers can pick a list to join (press 4)', type: 'bool', hint: 'After pressing 4, callers hear your groups ("For Women, press 1…") and join the one they pick. Members can also add themselves to another list this way.' },
   { f: 'transcribe_voicemail', label: 'Turn voicemails into text', type: 'bool', hint: 'Voicemails are typed out automatically (English, Hebrew or Yiddish) a minute after they come in. The text is emailed to you and shown under Replies.' },
   { f: 'private_vm_label', label: 'Private voicemail box for (press 6)', hint: 'Optional, e.g. "the Rabbi". Callers press 6 to leave a message only this person sees. Leave empty to turn off.' },
