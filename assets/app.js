@@ -515,7 +515,7 @@ const NAV_ORG = [
   { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Scheduled'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['samples', 'Sample messages'], ['pending', 'Waiting for YES']] },
   { g: 'inbox', icon: '📥', label: 'Inbox', tabs: [['replies', 'Replies & voicemails'], ['signup_requests', 'Signup requests'], ['inbound', 'All incoming texts']] },
   { g: 'people', icon: '👥', label: 'People', tabs: [['contacts', 'Contacts'], ['groups', 'Groups'], ['controllers', 'Texters'], ['opt_outs', 'Opted out']] },
-  { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['credits', 'Plan & credits'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
+  { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['credits', 'Plan & credits'], ['pronunciation', 'Pronunciation'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
 ];
 const NAV_PLATFORM = [['h', 'Platform owner'],
   { g: 'p_cust', icon: '🏛️', label: 'Customers', tabs: [['p_orgs', 'Organizations'], ['p_signups', 'New signups'], ['p_usage', 'Usage'], ['p_invoices', 'Invoices']] },
@@ -1103,6 +1103,101 @@ async function settingsPage() {
   draw(); $('#main').appendChild(card);
 }
 
+/* ---------- how a phone call will sound ---------- */
+function speakParts(parts) {
+  if (!('speechSynthesis' in window)) return toast('This browser can\'t play a preview. Use "Call me" instead.', true);
+  speechSynthesis.cancel();
+  const voices = speechSynthesis.getVoices();
+  const pick = lang => voices.find(v => v.lang.startsWith(lang) && /male|david|guy|daniel|mark|matthew|asaf/i.test(v.name)) || voices.find(v => v.lang.startsWith(lang));
+  (parts || []).forEach(p => { const u = new SpeechSynthesisUtterance(p.text); u.lang = p.lang === 'he' ? 'he-IL' : 'en-US'; const v = pick(u.lang.slice(0, 2)); if (v) u.voice = v; u.rate = 0.95; speechSynthesis.speak(u); });
+}
+function callSoundBox(el, getText, opts = {}) {
+  let last = null, timer = null, seq = 0;
+  el.innerHTML = `<div class="small" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+      <b>📞 How the phone call will sound</b>
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn ghost sm" data-cs-listen>▶ Listen here</button><button type="button" class="btn ghost sm" data-cs-call>📞 Call me to hear it</button></span></div>
+    <div class="cs-text" data-cs-text></div><div class="small muted" data-cs-changes></div>
+    ${opts.compact ? '' : '<div class="small muted" style="margin-top:6px">"Listen here" uses your computer\'s voice, so it\'s close but not exact. "Call me" calls your phone with exactly what members will hear.</div>'}`;
+  const refresh = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const txt = getText(); const my = ++seq;
+      if (!txt.trim()) { $('[data-cs-text]', el).innerHTML = '<span class="muted">Type a message to see how it will sound.</span>'; $('[data-cs-changes]', el).innerHTML = ''; last = null; return; }
+      const { data, error } = await sb.rpc('call_preview', { p_org: S.org.id, p_message: txt });
+      if (my !== seq || error) return;
+      last = data;
+      $('[data-cs-text]', el).innerHTML = (data.parts || []).map(p => `<span class="cs-${p.lang}" ${p.lang === 'he' ? 'dir="rtl" title="Read with the Hebrew voice"' : ''}>${esc(p.text)}</span>`).join(' ') || '<span class="muted">(nothing to read)</span>';
+      $('[data-cs-changes]', el).innerHTML = (data.changes || []).length
+        ? 'Said as: ' + data.changes.map(c => `<span class="chip">${esc(c.from)} → <b>${esc(c.to)}</b></span>`).join(' ') + ' · <a href="#pronunciation">change words</a>'
+        : ((data.parts || []).some(p => p.lang === 'he') ? 'Hebrew words without a set pronunciation are read with the Hebrew voice. <a href="#pronunciation">Add words</a>' : '');
+    }, 500);
+  };
+  $('[data-cs-listen]', el).addEventListener('click', async () => {
+    if (!last) { const { data } = await sb.rpc('call_preview', { p_org: S.org.id, p_message: getText() }); last = data; }
+    speakParts(last?.parts);
+  });
+  $('[data-cs-call]', el).addEventListener('click', async () => {
+    if (!getText().trim()) return toast('Type the message first.', true);
+    let saved = ''; try { saved = localStorage.getItem('cc_testphone') || ''; } catch {}
+    const close = modal('Call me to hear it', `<p style="margin-top:0">We'll call this phone and read the message exactly the way members will hear it.</p>
+      <div class="field"><label>Your phone</label><input id="csphone" type="tel" value="${esc(saved)}" placeholder="845-555-1234"></div>`,
+      { saveText: '📞 Call me', onSave: async () => {
+        const ph = $('#csphone').value.trim(); try { localStorage.setItem('cc_testphone', ph); } catch {}
+        const { data, error } = await sb.rpc('preview_call', { p_org: S.org.id, p_message: getText(), p_phone: ph });
+        if (error) { toast(friendlyError(error), true); return false; }
+        toast(`Calling ${fmtPhone(data)} within a minute…`);
+      } });
+  });
+  refresh();
+  return { refresh };
+}
+async function pronunciationPage() {
+  const o = (await sb.from('organizations').select('*').eq('id', S.org.id).single()).data;
+  const canEdit = S.perms.settings;
+  const [own, built] = await Promise.all([
+    sb.from('pronunciations').select('*').eq('org_id', o.id).order('word'),
+    JEW() ? sb.from('pronunciations').select('*').is('org_id', null).order('word') : Promise.resolve({ data: [] })]);
+  const mine = own.data || [], base = (built.data || []).filter(b => !mine.some(m => m.word.toLowerCase() === b.word.toLowerCase()));
+  $('#main').innerHTML = head('Pronunciation', 'How words are said on phone calls. Texts and emails stay exactly as you typed them; only the call reads these words the way you set here.')
+    + `${JEW() ? `<div class="card panel" style="margin-bottom:16px"><label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" id="ashk" ${o.ashkenazi !== false ? 'checked' : ''} ${canEdit ? '' : 'disabled'} style="margin-top:4px">
+        <span><b>Ashkenazi spellings for the parsha and holidays</b><br><span class="small muted">{parsha} and holiday names come out like "Bereishis", "Sukkos" (instead of "Bereshit", "Sukkot"). Takes effect when the times next refresh, within a day.</span></span></label></div>` : ''}
+      <div class="card panel" style="margin-bottom:16px"><h3 style="margin-top:0">Try it</h3>
+        <textarea id="prtest" rows="3" style="width:100%" placeholder="Type in English, Hebrew, or both, e.g. מנחה בשבת 4:15, Kiddush after davening">מנחה בשבת 4:15. Good Shabbos! מזל טוב to the Cohen family.</textarea>
+        <div id="prbox" class="callbox" style="margin-top:10px"></div></div>
+      <div class="card panel" style="margin-bottom:16px"><h3 style="margin-top:0">Your words</h3>
+        ${canEdit ? `<form id="pradd" class="pr-row" style="margin-bottom:10px"><input name="word" placeholder="Word as you write it (e.g. שבת or Shabbat)" required><input name="say" placeholder="Say it as (e.g. Shabbos)" required><button class="btn sm">+ Add</button></form>` : ''}
+        <div id="prmine">${mine.length ? mine.map(m => prRow(m, true)).join('') : '<div class="small muted">None yet. Add words above, or change one from the list below.</div>'}</div></div>
+      ${JEW() ? `<details class="card panel"><summary><b>Built-in words (${base.length})</b> <span class="small muted">common Hebrew words, said the Ashkenazi way</span></summary>
+        <div style="margin-top:10px">${base.map(b => prRow(b, false)).join('')}</div></details>` : ''}`;
+  function prRow(r, isMine) {
+    return `<div class="pr-item ${r.active === false ? 'muted' : ''}" data-id="${esc(r.id)}" data-word="${esc(r.word)}" data-say="${esc(r.say_as)}">
+      <span ${/[֐-׿]/.test(r.word) ? 'dir="rtl"' : ''}><b>${esc(r.word)}</b></span><span>→ ${esc(r.say_as)}${r.active === false ? ' <span class="pill">off</span>' : ''}</span>
+      <span style="display:flex;gap:4px;justify-content:flex-end"><button type="button" class="btn ghost sm" data-pr-listen title="Listen">▶</button>
+      ${canEdit ? (isMine ? `<button type="button" class="btn ghost sm" data-pr-edit>Change</button><button type="button" class="btn ghost sm" data-pr-del title="Remove">🗑</button>`
+                          : `<button type="button" class="btn ghost sm" data-pr-edit>Change</button><button type="button" class="btn ghost sm" data-pr-off>Turn off</button>`) : ''}</span></div>`;
+  }
+  const box = callSoundBox($('#prbox'), () => $('#prtest').value);
+  $('#prtest').addEventListener('input', box.refresh);
+  $('#ashk')?.addEventListener('change', async e => check(await sb.from('organizations').update({ ashkenazi: e.target.checked }).eq('id', o.id), 'Saved'));
+  $('#pradd')?.addEventListener('submit', async e => {
+    e.preventDefault(); const word = e.target.word.value.trim(), say = e.target.say.value.trim(); if (!word || !say) return;
+    const ex = mine.find(m => m.word.toLowerCase() === word.toLowerCase());
+    const r = ex ? await sb.from('pronunciations').update({ say_as: say, active: true, updated_at: new Date().toISOString() }).eq('id', ex.id)
+                 : await sb.from('pronunciations').insert({ org_id: o.id, word, say_as: say });
+    if (r.error) return toast(friendlyError(r.error), true);
+    toast('Saved'); pronunciationPage();
+  });
+  $('#main').addEventListener('click', async e => {
+    const row = e.target.closest('.pr-item'); if (!row) return;
+    const { id, word, say } = row.dataset;
+    if (e.target.closest('[data-pr-listen]')) speakParts([{ lang: /[֐-׿]/.test(say) ? 'he' : 'en', text: say }]);
+    if (e.target.closest('[data-pr-del]')) { check(await sb.from('pronunciations').delete().eq('id', id), 'Removed'); pronunciationPage(); }
+    if (e.target.closest('[data-pr-off]')) { const r = await sb.from('pronunciations').insert({ org_id: o.id, word, say_as: say, active: false }); if (r.error) return toast(friendlyError(r.error), true); toast('Turned off'); pronunciationPage(); }
+    if (e.target.closest('[data-pr-edit]')) { const f = $('#pradd'); if (!f) return; f.word.value = word; f.say.value = say; f.say.focus(); f.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  });
+}
+
 /* ---------- sample messages ---------- */
 const SAMPLES = [
   ['Reminders', '📅', 'Event reminder', 'PREF', 'Reminder: our community dinner is tomorrow at 7 PM in the main hall. See you there!'],
@@ -1626,6 +1721,7 @@ async function sendPage() {
         ${JEW() ? `<details class="zdet" id="zdet"><summary>🕯️ Add a time: candle lighting, shkia, zmanim…</summary>${zmanChips(false)}<div class="hint">Times are for the day it goes out. Add -10 or +5 for minutes before/after, e.g. {shkia-10}.</div></details><div id="zwarn" class="small" style="color:var(--warn)"></div>` : ''}
         <div class="hint" id="callnote" style="display:none">📞 Calls read this message aloud twice.</div>
         <div id="linkwarn" class="small" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad)">⚠️ Your message has a web address or phone number. Your texting registration doesn't allow these, so carriers may block it. Please remove it.</div></div>
+      <div id="callbox" class="callbox hidden"></div>
       <div class="field" id="pollbox"><label style="display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer"><input type="checkbox" id="pollon"> 📊 Add a poll (members answer by replying with a number)</label>
         <div id="pollopts" class="hidden" style="margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--cream)">
           <div class="hint" style="margin:0 0 8px">Type your question in the message box above, then the answers here.</div>
@@ -1995,6 +2091,9 @@ async function sendPage() {
   });
   f.msg.addEventListener('input', draw);
   f.group.addEventListener('change', loadReach); f.mode.addEventListener('change', loadReach);
+  const cbox = callSoundBox($('#callbox'), () => f.msg.value, { compact: true });
+  const syncCall = () => { const on = ['PREF', 'CALL', 'EMERGENCY'].includes(f.mode.value) && f.msg.value.trim(); $('#callbox').classList.toggle('hidden', !on); if (on) cbox.refresh(); };
+  f.msg.addEventListener('input', syncCall); f.mode.addEventListener('change', syncCall); setTimeout(syncCall, 300);
   loadReach();
   f.addEventListener('submit', async e => {
     e.preventDefault();
@@ -2118,7 +2217,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   $$('[data-hebpref]').forEach(b => b.classList.toggle('hidden', !JEW()));
@@ -2140,6 +2239,7 @@ async function render() {
   if (S.view === 'registration') return registrationPage();
   if (S.view === 'credits') return creditsPage();
   if (S.view === 'samples') return samplesPage();
+  if (S.view === 'pronunciation') return pronunciationPage();
   return tablePage(S.view);
 }
 

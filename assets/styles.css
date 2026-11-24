@@ -416,3 +416,10 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
 .sample{display:flex;flex-direction:column;margin:0}
 .sample .btn{align-self:flex-start}
 .chip.on{background:var(--navy,#1d3a6e);color:#fff}
+
+.callbox{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 14px;background:#fbfaf6}
+.cs-text{margin:8px 0 4px;line-height:1.6}
+.cs-he{background:#eef4fb;border-radius:6px;padding:1px 6px}
+.pr-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}
+.pr-item{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+@media (max-width:700px){.pr-row,.pr-item{grid-template-columns:1fr}}
