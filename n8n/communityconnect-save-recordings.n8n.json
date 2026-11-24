@@ -6,7 +6,8 @@
         "httpMethod": "POST",
         "path": "save-rec-80ec3afaf872e3990291",
         "responseMode": "onReceived",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
       "name": "Recording to save (from Supabase)",
       "type": "n8n-nodes-base.webhook",
@@ -15,8 +16,13 @@
         0,
         0
       ],
-      "id": "e952ef35-ac12-43a5-8d4f-13f86e52574c",
-      "webhookId": "4a79a24e-b52c-41fc-b6d6-7ed0e95c13bc"
+      "id": "32129155-df64-451d-9d79-ab1d55bb0f72",
+      "webhookId": "9223a240-b2c9-4410-a740-29f198fd6053",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CommunityConnect dispatch secret"
+        }
+      }
     },
     {
       "parameters": {
@@ -28,8 +34,8 @@
           },
           "conditions": [
             {
-              "id": "60abac46-9626-4416-ac3a-48d039e816fd",
-              "leftValue": "={{ $json.body.secret === 'PUT_THE_DISPATCH_SECRET_HERE' && /^https:\\/\\/api\\.twilio\\.com\\//.test($json.body.url || '') && !!$json.body.path }}",
+              "id": "5de3f0df-9db6-48a3-80ca-78299ecfcad8",
+              "leftValue": "={{ /^https:\\/\\/api\\.twilio\\.com\\//.test($json.body.url || '') && !!$json.body.path }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -49,40 +55,28 @@
         220,
         0
       ],
-      "id": "c7f36b4a-ab0a-435f-9756-9feef6fe1da4"
+      "id": "4a10c074-7b11-4d2f-a661-3d2054b03680"
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
             {
-              "id": "67c5a59d-09de-4acc-95dd-7733f103b6a4",
+              "id": "bede1c9d-6194-4ce7-abfe-2e80ccd7e1b4",
               "name": "supabaseUrl",
               "value": "https://zuyqaicvnpwqawfxakjg.supabase.co",
               "type": "string"
             },
             {
-              "id": "42e7a439-d99e-44c9-be2a-132f1d110ef1",
-              "name": "twilioAuthToken",
-              "value": "PASTE_YOUR_TWILIO_AUTH_TOKEN_HERE",
-              "type": "string"
-            },
-            {
-              "id": "1e074756-fa1f-4e8a-9cdc-83dfa896534e",
+              "id": "5a12e3e9-b050-4e6b-be34-2b8ffc48fc52",
               "name": "transcribeUrl",
               "value": "https://api.groq.com/openai/v1/audio/transcriptions",
               "type": "string"
             },
             {
-              "id": "60f74fea-ad16-41aa-84af-fe4572710170",
+              "id": "90a597f7-da40-49de-8cf8-6088ba67bbae",
               "name": "transcribeModel",
               "value": "whisper-large-v3",
-              "type": "string"
-            },
-            {
-              "id": "8f5c6e4a-4270-47c4-8752-341234394aeb",
-              "name": "transcribeApiKey",
-              "value": "PASTE_YOUR_GROQ_API_KEY_HERE",
               "type": "string"
             }
           ]
@@ -97,11 +91,11 @@
         440,
         -100
       ],
-      "id": "5f43ed11-8e24-46eb-a4b8-bd272a3c9fa9"
+      "id": "49b4571b-a283-44a0-984e-0c1f7857c130"
     },
     {
       "parameters": {
-        "jsCode": "// Twilio recordings need the account's login (Account SID + Auth Token).\nconst cfg = $('Config (recordings)').first().json;\nconst b = $('Recording to save (from Supabase)').first().json.body;\nconst sid = (b.url.match(/\\/Accounts\\/(AC[0-9a-fA-F]+)\\//) || [])[1] || '';\nconst url = /\\.(mp3|wav)$/i.test(b.url) ? b.url : b.url + '.mp3';\nreturn [{ json: { job: b.job, path: b.path, url,\n  auth: 'Basic ' + Buffer.from(sid + ':' + cfg.twilioAuthToken).toString('base64'),\n  publicUrl: cfg.supabaseUrl + '/storage/v1/object/public/recordings/' + b.path } }];\n"
+        "jsCode": "const cfg = $('Config (recordings)').first().json;\nconst b = $('Recording to save (from Supabase)').first().json.body;\nconst url = /\\.(mp3|wav)$/i.test(b.url) ? b.url : b.url + '.mp3';\nreturn [{ json: { job: b.job, path: b.path, url,\n  publicUrl: cfg.supabaseUrl + '/storage/v1/object/public/recordings/' + b.path } }];\n"
       },
       "name": "Prepare",
       "type": "n8n-nodes-base.code",
@@ -110,20 +104,13 @@
         660,
         -100
       ],
-      "id": "818e936e-6d4d-42f4-a621-baae56b7bb84"
+      "id": "cd189fe0-141f-4a10-9d52-5c889afde1d9"
     },
     {
       "parameters": {
         "url": "={{ $json.url }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $json.auth }}"
-            }
-          ]
-        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
         "options": {
           "response": {
             "response": {
@@ -140,10 +127,16 @@
         880,
         -100
       ],
-      "id": "20a8b548-3587-4555-a0d9-7148f21a58c5",
+      "id": "76facf6a-0d64-4029-9ea4-72b3b0e5e828",
       "retryOnFail": true,
       "maxTries": 4,
-      "waitBetweenTries": 4000
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "twilioApi": {
+          "id": "PKocVXFrBevOLz0u",
+          "name": "Twilio account"
+        }
+      }
     },
     {
       "parameters": {
@@ -176,7 +169,7 @@
         1100,
         -100
       ],
-      "id": "2c3f6c87-a076-4b94-9776-e928b57c73be",
+      "id": "f27b3ba9-e1d6-4f75-8b33-7cfdde2803b9",
       "credentials": {
         "supabaseApi": {
           "id": "UJKemDkIPKxRY4nb",
@@ -202,7 +195,7 @@
         1320,
         -100
       ],
-      "id": "4da26a3e-ec47-4cca-a923-575367b255a2",
+      "id": "60f62514-56ee-4483-af64-7899990eac99",
       "credentials": {
         "supabaseApi": {
           "id": "UJKemDkIPKxRY4nb",
@@ -212,7 +205,7 @@
     },
     {
       "parameters": {
-        "content": "## CommunityConnect: save recordings\n\nVoicemails and phone-recorded announcements are stored by Twilio, where opening them asks for the Twilio password. This copies each one into your Supabase storage so it plays with one click on the website.\n\n1. In **Config (recordings)** paste your Twilio Auth Token (same as the other workflows).\n2. Open **Save in Supabase storage** and **Use the saved copy** and pick your Supabase credential.\n3. Save, then **Publish**.\n\nRuns by itself for every new recording, and once for the older ones.\n\n### Voicemail to text\nVoicemails are typed out here (not by Twilio, which costs 5¢ a minute). Groq Whisper costs about $0.002 a minute and understands English, Hebrew and Yiddish.\n1. Make a free account at console.groq.com → API Keys → Create.\n2. Paste the key in **Config (recordings)** → transcribeApiKey.\nTo use OpenAI instead: transcribeUrl = https://api.openai.com/v1/audio/transcriptions, transcribeModel = gpt-4o-mini-transcribe, and your OpenAI key.",
+        "content": "## CommunityConnect: save recordings + voicemail to text\n\nCopies each voicemail and phone recording from Twilio into Supabase storage, and types voicemails out with Groq.\n\nNo passwords in this workflow. Credentials used:\n- **CommunityConnect dispatch secret** (Header Auth) on the first step.\n- **Twilio account** on Download from Twilio.\n- **Groq (voicemail to text)**: Header Auth, Name `Authorization`, Value `Bearer ` + your Groq key (console.groq.com → API Keys).\n- **Supabase** on the Supabase steps.\n\nTo use OpenAI instead of Groq: change transcribeUrl and transcribeModel in Config (recordings), and the Value of the credential to `Bearer ` + your OpenAI key.",
         "height": 640,
         "width": 520,
         "color": 5
@@ -224,7 +217,7 @@
         0,
         -480
       ],
-      "id": "add8e249-0d8e-40f5-a970-2cc9181ff5bb"
+      "id": "0282daaf-8a79-47b6-a472-0f8ab0a2e5e4"
     },
     {
       "parameters": {
@@ -236,8 +229,8 @@
           },
           "conditions": [
             {
-              "id": "aac3b018-c0ea-4703-ae1d-fe7ef1fb0c53",
-              "leftValue": "={{ $('Recording to save (from Supabase)').first().json.body.transcribe === true && !/^PASTE_/.test($('Config (recordings)').first().json.transcribeApiKey || 'PASTE_') }}",
+              "id": "ed250c17-744b-4a09-ba46-19eec7217f1b",
+              "leftValue": "={{ $('Recording to save (from Supabase)').first().json.body.transcribe === true }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -250,7 +243,7 @@
         },
         "options": {}
       },
-      "id": "8ba28aea-7fda-4c07-b63b-75a1ac041096",
+      "id": "d201b9af-7ded-4823-b613-8430a993a8d7",
       "name": "Type it out?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -263,7 +256,7 @@
       "parameters": {
         "jsCode": "// The speech service needs a file name ending in .mp3\nconst item = $input.first();\nitem.binary.data.fileName = 'voicemail.mp3';\nitem.binary.data.mimeType = 'audio/mpeg';\nreturn [item];\n"
       },
-      "id": "fc6686fe-f719-42cd-830a-4a6f1f993aef",
+      "id": "a50f2a99-c8de-44f9-9079-b11e57c97811",
       "name": "Name the file",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -276,15 +269,6 @@
       "parameters": {
         "method": "POST",
         "url": "={{ $('Config (recordings)').first().json.transcribeUrl }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Config (recordings)').first().json.transcribeApiKey }}"
-            }
-          ]
-        },
         "sendBody": true,
         "contentType": "multipart-form-data",
         "bodyParameters": {
@@ -310,9 +294,11 @@
         },
         "options": {
           "timeout": 60000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
-      "id": "de3a6d94-57c0-42c0-b76a-4b4052e62ec8",
+      "id": "954a87f8-7c41-42c5-8eef-d61319d09b9c",
       "name": "Transcribe voicemail",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -322,7 +308,12 @@
       ],
       "onError": "continueRegularOutput",
       "retryOnFail": true,
-      "maxTries": 2
+      "maxTries": 2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Groq (voicemail to text)"
+        }
+      }
     },
     {
       "parameters": {
@@ -335,7 +326,7 @@
         "jsonBody": "={{ JSON.stringify({ p_job: $('Prepare').first().json.job, p_text: $json.text || '' }) }}",
         "options": {}
       },
-      "id": "bc731cc2-01c4-4bec-9545-c060d5bf0f6e",
+      "id": "0b95f925-ff1a-46cc-adee-94cc3fae68f5",
       "name": "Save the text (Supabase)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,

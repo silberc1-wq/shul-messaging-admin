@@ -29,12 +29,6 @@
               "type": "string"
             },
             {
-              "id": "5eb08592-2569-4cc9-9470-4759235e73bc",
-              "name": "twilioAuthToken",
-              "value": "PASTE_YOUR_TWILIO_AUTH_TOKEN_HERE",
-              "type": "string"
-            },
-            {
               "id": "d7566cf2-ec5d-4989-af89-a6382aa542a2",
               "name": "voiceWebhookUrl",
               "value": "https://n8n.punchverification.com/webhook/voice-a9f4e86705730fc7174e",
@@ -69,24 +63,6 @@
     },
     {
       "parameters": {
-        "action": "hmac",
-        "type": "SHA1",
-        "value": "={{ $json.sigBase }}",
-        "dataPropertyName": "expected",
-        "secret": "={{ $('Config (voice)').first().json.twilioAuthToken }}",
-        "encoding": "base64"
-      },
-      "id": "5826760e-63df-42dd-a4ff-c6ff94116f11",
-      "name": "Twilio Signature",
-      "type": "n8n-nodes-base.crypto",
-      "typeVersion": 1,
-      "position": [
-        660,
-        200
-      ]
-    },
-    {
-      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -96,7 +72,7 @@
           "conditions": [
             {
               "id": "9c172ca4-eeb3-40b9-80cf-fe9db3b11d72",
-              "leftValue": "={{ $json.sigHeader !== '' && $json.expected === $json.sigHeader }}",
+              "leftValue": "={{ $json.sigOk === true }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -195,7 +171,7 @@
     },
     {
       "parameters": {
-        "content": "## CommunityConnect: record an announcement by phone\n\n1. In **Config (voice)** paste your Twilio Auth Token (the same one as in the texting workflow).\n2. **voiceWebhookUrl** must be exactly the **Production URL** of *Twilio Incoming Call* (it already is, unless your n8n address is different).\n3. Save, then **Publish**.\n4. In Twilio, set your number's **A call comes in** to that Production URL (HTTP POST).\n\nTexters call the number, choose a group by keypad, record, listen back and press 1. Everyone in the group gets a phone call that plays the recording (sent by the texting workflow).",
+        "content": "## CommunityConnect: voice\n\nAnswers calls to every organization's number. No passwords in this workflow: the Twilio check is done by Supabase (token in Supabase Vault), and **Handle Call** uses the Supabase credential.\n\nAfter pasting: open **Check Twilio signature** and **Handle Call**, make sure the Supabase credential is picked, then **Publish**.",
         "height": 360,
         "width": 520,
         "color": 5
@@ -207,6 +183,46 @@
       "position": [
         0,
         -260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (voice)').first().json.supabaseUrl }}/rest/v1/rpc/check_twilio",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_base: $json.sigBase, p_sig: $json.sigHeader }) }}",
+        "options": {}
+      },
+      "id": "02cf7716-d128-4089-9465-f3e8a455d3c2",
+      "name": "Check Twilio signature (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "UJKemDkIPKxRY4nb",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keep the original Twilio request and add the check result\nconst src = $('Build Signature Check').first().json;\nreturn [{ json: { ...src, sigOk: $json.ok === true } }];\n"
+      },
+      "id": "5ac25787-dca1-4865-a2ba-2a3102430198",
+      "name": "Signature result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        770,
+        320
       ]
     }
   ],
@@ -237,18 +253,7 @@
       "main": [
         [
           {
-            "node": "Twilio Signature",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Twilio Signature": {
-      "main": [
-        [
-          {
-            "node": "Really from Twilio?",
+            "node": "Check Twilio signature (Supabase)",
             "type": "main",
             "index": 0
           }
@@ -278,6 +283,28 @@
         [
           {
             "node": "Answer the Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Twilio signature (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Signature result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature result": {
+      "main": [
+        [
+          {
+            "node": "Really from Twilio?",
             "type": "main",
             "index": 0
           }
