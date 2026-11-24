@@ -63,46 +63,13 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
-            {
-              "id": "9c172ca4-eeb3-40b9-80cf-fe9db3b11d72",
-              "leftValue": "={{ $json.sigOk === true }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "df97bf59-75a0-4958-957d-f95c9bdf1675",
-      "name": "Really from Twilio?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        880,
-        200
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
-        "url": "={{ $('Config (voice)').first().json.supabaseUrl }}/rest/v1/rpc/handle_voice",
+        "url": "={{ $('Config (voice)').first().json.supabaseUrl }}/rest/v1/rpc/voice_call",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_call_sid: $json.body.CallSid, p_from: $json.body.From, p_to: $json.body.To, p_step: ($json.query || {}).s || '', p_digits: $json.body.Digits || null, p_recording_url: $json.body.RecordingUrl || null, p_recording_seconds: parseInt($json.body.RecordingDuration || '0', 10) || null, p_base_url: $('Config (voice)').first().json.voiceWebhookUrl, p_transcript: $json.body.TranscriptionText || null }) }}",
+        "jsonBody": "={{ JSON.stringify({ p_sig_base: $json.sigBase, p_sig: $json.sigHeader, p_call_sid: $json.body.CallSid, p_from: $json.body.From, p_to: $json.body.To, p_step: ($json.query || {}).s || '', p_digits: $json.body.Digits || null, p_recording_url: $json.body.RecordingUrl || null, p_recording_seconds: parseInt($json.body.RecordingDuration || '0', 10) || null, p_base_url: $('Config (voice)').first().json.voiceWebhookUrl, p_transcript: $json.body.TranscriptionText || null }) }}",
         "options": {}
       },
       "id": "c62e458d-4aba-4742-85b1-9b86218e8f5e",
@@ -110,8 +77,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1100,
-        120
+        128,
+        176
       ],
       "credentials": {
         "supabaseApi": {
@@ -141,37 +108,13 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1320,
-        120
+        352,
+        176
       ]
     },
     {
       "parameters": {
-        "respondWith": "text",
-        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Reject/></Response>",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Content-Type",
-                "value": "text/xml"
-              }
-            ]
-          }
-        }
-      },
-      "id": "e74acee9-da00-4ad4-ad83-e7462159b4aa",
-      "name": "Reject (not from Twilio)",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1100,
-        320
-      ]
-    },
-    {
-      "parameters": {
-        "content": "## CommunityConnect: voice\n\nAnswers calls to every organization's number. No passwords in this workflow: the Twilio check is done by Supabase (token in Supabase Vault), and **Handle Call** uses the Supabase credential.\n\nAfter pasting: open **Check Twilio signature** and **Handle Call**, make sure the Supabase credential is picked, then **Publish**.",
+        "content": "## CommunityConnect: voice\n\nAnswers calls to every organization's number. Each keypress makes one trip to Supabase, which checks the call really comes from Twilio (token in Supabase Vault) and answers it, so the caller waits as little as possible.\n\nNo passwords in this workflow. After pasting: open **Handle Call**, make sure the Supabase credential is picked, then **Publish**.",
         "height": 360,
         "width": 520,
         "color": 5
@@ -183,46 +126,6 @@
       "position": [
         0,
         -260
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Config (voice)').first().json.supabaseUrl }}/rest/v1/rpc/check_twilio",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_base: $json.sigBase, p_sig: $json.sigHeader }) }}",
-        "options": {}
-      },
-      "id": "02cf7716-d128-4089-9465-f3e8a455d3c2",
-      "name": "Check Twilio signature (Supabase)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        660,
-        200
-      ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "UJKemDkIPKxRY4nb",
-          "name": "Supabase account"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Keep the original Twilio request and add the check result\nconst src = $('Build Signature Check').first().json;\nreturn [{ json: { ...src, sigOk: $json.ok === true } }];\n"
-      },
-      "id": "5ac25787-dca1-4865-a2ba-2a3102430198",
-      "name": "Signature result",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        770,
-        320
       ]
     }
   ],
@@ -253,25 +156,7 @@
       "main": [
         [
           {
-            "node": "Check Twilio signature (Supabase)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Really from Twilio?": {
-      "main": [
-        [
-          {
             "node": "Handle Call (Supabase)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Reject (not from Twilio)",
             "type": "main",
             "index": 0
           }
@@ -283,28 +168,6 @@
         [
           {
             "node": "Answer the Call",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Twilio signature (Supabase)": {
-      "main": [
-        [
-          {
-            "node": "Signature result",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Signature result": {
-      "main": [
-        [
-          {
-            "node": "Really from Twilio?",
             "type": "main",
             "index": 0
           }
