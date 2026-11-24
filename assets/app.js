@@ -1047,7 +1047,6 @@ const SETTINGS_COLS = [
   { f: 'allow_phone_signup', label: 'Callers can sign up by phone (press 4)', type: 'bool', hint: 'They are added to get announcements by phone call.' },
   { f: 'detect_voicemail', label: 'Tell apart people and answering machines on calls', type: 'bool', hint: 'The delivery report then shows "Answered" vs "Voicemail". Costs about ¾ cent extra per call. If off, a call picked up by voicemail counts as answered.' },
   { f: 'allow_auto_signup', label: 'Add new signups automatically', type: 'bool', hint: 'Applies to text JOIN and phone signups. If off, they appear in Signup Requests for approval.' },
-  { f: 'default_voice', label: 'Default voice', type: 'select', opts: ['Standard', 'Male', 'Female'] },
   { f: 'contact_person', label: 'Main contact person' }, { f: 'contact_phone', label: 'Main contact phone', type: 'phone' }, { f: 'contact_email', label: 'Main contact email', type: 'email' },
 ];
 

@@ -148,7 +148,7 @@
   {
    "parameters": {
     "respondWith": "text",
-    "responseBody": "={{ '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' + ($json.twiml || '<Response><Say voice=\"alice\">Sorry, something went wrong. Please try again later.</Say><Hangup/></Response>') }}",
+    "responseBody": "={{ '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' + ($json.twiml || '<Response><Say voice=\"Polly.Matthew\">Sorry, something went wrong. Please try again later.</Say><Hangup/></Response>') }}",
     "options": {
      "responseHeaders": {
       "entries": [
