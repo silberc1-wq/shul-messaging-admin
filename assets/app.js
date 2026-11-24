@@ -267,7 +267,7 @@ const VIEWS = {
       if (row.scheduled_for && new Date(row.scheduled_for) < new Date()) { toast('Pick a time in the future', true); return false; } },
     canEdit: r => ['SCHEDULED', 'PENDING'].includes(r.status) },
 
-  history: { title: 'History', needs: 'history', icon: '📜', table: 'message_history', scope: 'org', order: ['created_at', false], readOnly: true,
+  history: { title: 'History', needs: 'history', icon: '📜', table: 'message_history', scope: 'org', order: ['created_at', false], readOnly: true, query: q => q.is('onetime_job', null),
     desc: 'Every announcement that went out.',
     cols: [
       { f: 'created_at', label: 'When', type: 'datetime' }, { f: 'sender_name', label: 'Sender' }, { f: 'command', label: 'Type', type: 'status', render: (v, r) => cmdPill(v, r) },
@@ -518,7 +518,7 @@ const NAV_ORG = [
   { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['credits', 'Plan & credits'], ['pronunciation', 'Pronunciation'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
 ];
 const NAV_PLATFORM = [['h', 'Platform owner'],
-  { g: 'p_cust', icon: '🏛️', label: 'Customers', tabs: [['p_orgs', 'Organizations'], ['p_signups', 'New signups'], ['p_usage', 'Usage'], ['p_invoices', 'Invoices']] },
+  { g: 'p_cust', icon: '🏛️', label: 'Customers', tabs: [['p_orgs', 'Organizations'], ['p_signups', 'New signups'], ['p_onetime', 'One-time sends'], ['p_usage', 'Usage'], ['p_invoices', 'Invoices']] },
   { g: 'p_setup', icon: '🧰', label: 'Setup', tabs: [['p_setup', 'Setup tasks'], ['p_compliance', 'Compliance'], ['p_numbers', 'Numbers'], ['p_tests', 'Tests']] },
   { g: 'p_biz', icon: '💼', label: 'Business', tabs: [['p_plans', 'Plans & pricing'], ['p_packs', 'Credit packs'], ['p_leads', 'Leads'], ['p_support', 'Support'], ['p_roadmap', 'Roadmap'], ['p_costs', 'Costs'], ['p_staff', 'Staff'], ['p_settings', 'Platform settings']] }];
 const navAllowed = k => !VIEWS[k]?.needs || S.perms[VIEWS[k].needs];
@@ -739,6 +739,7 @@ async function tablePage(key) {
   let q = sb.from(v.table).select('*').limit(5000);
   if (v.scope === 'org') q = q.eq('org_id', S.org.id);
   if (v.soft && !T.showDeleted) q = q.is('deleted_at', null);
+  if (v.query) q = v.query(q);
   const res = await q;
   if (res.error) { $('#tbl').innerHTML = `<div class="empty">${esc(res.error.message)}</div>`; return; }
   T.rows = res.data || [];
@@ -1215,6 +1216,127 @@ async function pronunciationPage() {
     if (e.target.closest('[data-pr-off]')) { const r = await sb.from('pronunciations').insert({ org_id: o.id, word, say_as: say, active: false }); if (r.error) return toast(friendlyError(r.error), true); toast('Turned off'); pronunciationPage(); }
     if (e.target.closest('[data-pr-edit]')) { const f = $('#pradd'); if (!f) return; f.word.value = word; f.say.value = say; f.say.focus(); f.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   });
+}
+
+/* ---------- one-time sends (platform owner) ---------- */
+async function onetimePage() {
+  if (!S.isPlatform) { $('#main').innerHTML = head('One-time sends', '') + '<div class="card panel">Only the platform owner can use this.</div>'; return; }
+  const [{ data: orgs }, { data: sets }, { data: jobs }] = await Promise.all([
+    sb.from('organizations').select('id,name,twilio_number,is_demo').is('deleted_at', null).eq('active', true).order('name'),
+    sb.from('app_settings').select('key,value').in('key', ['onetime_rate_text', 'onetime_rate_call']),
+    sb.from('onetime_jobs').select('*').order('created_at', { ascending: false }).limit(50)]);
+  const rate = k => parseFloat((sets || []).find(x => x.key === k)?.value || (k.endsWith('text') ? '0.05' : '0.10'));
+  let recips = [], audio = null, editing = null;
+  const money = n => '$' + (Math.round((+n || 0) * 100) / 100).toFixed(2);
+  $('#main').innerHTML = head('One-time sends', 'Send to a list someone gives you, once, and charge them for it. The numbers are kept only inside the job: they never become contacts, so there is nothing to delete afterwards. It does not use any organization\'s monthly credits.')
+    + `<form class="card panel" id="otf" novalidate style="max-width:880px">
+      <div class="grid2">
+        <div class="field"><label>Client (who it's for)</label><input name="client" required placeholder="e.g. Cohen family, Bais Yaakov dinner"><div class="hint">Texts start with "<b>this name</b> via CommunityConnect:".</div></div>
+        <div class="field"><label>Client phone or email</label><input name="contact" placeholder="For the bill"></div>
+        <div class="field"><label>Send from the number of</label><select name="org">${(orgs || []).filter(o => !o.is_demo).map(o => `<option value="${o.id}">${esc(o.name)} · ${esc(fmtPhone(o.twilio_number))}</option>`).join('')}</select><div class="hint">Replies to the texts arrive at that organization.</div></div>
+        <div class="field"><label>How</label><select name="mode"><option value="TEXT">Text</option><option value="CALL">Phone call (read aloud)</option><option value="BOTH">Text and phone call</option><option value="VOICE">Voice recording (call)</option></select></div>
+      </div>
+      <div class="field"><label>The list</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><label class="btn secondary sm" style="cursor:pointer">📄 Upload Excel or CSV<input type="file" id="otfile" accept=".csv,.xlsx,.xls,.txt" hidden></label><span class="small muted">or paste below, one per line: phone, name (name is optional)</span></div>
+        <textarea name="list" rows="5" style="width:100%" placeholder="845-555-1234, Moshe Klein&#10;718-555-9876"></textarea>
+        <div style="margin-top:6px"><button type="button" class="btn secondary sm" id="otcheck">✔ Check the list</button> <span id="otsum" class="small"></span></div></div>
+      <div class="field" id="otmsgf"><label>Message</label><textarea name="msg" rows="4" style="width:100%" placeholder="Type the message. {name} = each person's first name, if the list has names."></textarea></div>
+      <div class="field hidden" id="otvoice"><label>Recording</label><input type="file" id="otaudio" accept="audio/*"> <span class="small muted">or link:</span> <input name="audio" placeholder="https://…" style="min-width:260px"></div>
+      <div class="grid2">
+        <div class="field"><label>Price per text ($)</label><input name="rt" type="number" step="0.01" min="0" value="${rate('onetime_rate_text')}"></div>
+        <div class="field"><label>Price per call ($)</label><input name="rc" type="number" step="0.01" min="0" value="${rate('onetime_rate_call')}"></div>
+      </div>
+      <div class="card" style="padding:12px 14px;background:#fbfaf6;margin-bottom:12px"><div id="otcalc" class="small">Check the list to see the total.</div>
+        <div class="field" style="margin:8px 0 0"><label>Charge the client ($)</label><input name="price" type="number" step="0.01" min="0" style="max-width:180px"> <span class="small muted">Filled in from the prices above; change it if you like.</span></div></div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:14px"><input type="checkbox" name="consent" style="margin-top:3px"> <span>The client confirms the people on this list agreed to get messages from them. <span class="muted small">(Required by phone carriers and calling rules.)</span></span></label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" class="btn secondary" id="otsave">💾 Save</button><button type="submit" class="btn gold">Send now</button></div>
+    </form>
+    <h3 style="margin:26px 0 10px">Past one-time sends</h3><div id="otjobs"></div>`;
+  const f = $('#otf');
+  const syncMode = () => { const v = f.mode.value === 'VOICE'; $('#otvoice').classList.toggle('hidden', !v); $('#otmsgf').classList.toggle('hidden', v); calc(); };
+  function calc() {
+    const n = recips.length, mode = f.mode.value;
+    if (!n) { $('#otcalc').innerHTML = 'Check the list to see the total.'; return; }
+    const body = `${f.client.value || 'Client'} via CommunityConnect:\n${f.msg.value}\nReply STOP to opt out.`;
+    const seg = Math.max(1, segInfo(body).segments);
+    const texts = ['TEXT', 'BOTH'].includes(mode) ? n : 0, calls = ['CALL', 'BOTH', 'VOICE'].includes(mode) ? n : 0;
+    const total = texts * seg * (+f.rt.value || 0) + calls * (+f.rc.value || 0);
+    $('#otcalc').innerHTML = `<b>${num(n)}</b> people · ${texts ? `${num(texts)} texts × ${seg} part${seg > 1 ? 's' : ''} × ${money(f.rt.value)}` : ''}${texts && calls ? ' + ' : ''}${calls ? `${num(calls)} calls × ${money(f.rc.value)}` : ''} = <b>${money(total)}</b>`;
+    if (!f.price.dataset.touched) f.price.value = (Math.round(total * 100) / 100).toFixed(2);
+  }
+  const rowsFromSheet = rows => rows.map(r => { const cells = r.map(x => String(x ?? '').trim()); const pi = cells.findIndex(c => c.replace(/\D/g, '').length >= 10);
+    return pi < 0 ? null : { phone: cells[pi], name: cells.filter((c, i) => i !== pi && c && c.replace(/\D/g, '').length < 7).join(' ') }; }).filter(Boolean);
+  async function check(rows) {
+    const { data, error } = await sb.rpc('onetime_prepare', { p_rows: rows });
+    if (error) return toast(friendlyError(error), true);
+    recips = data.recipients || [];
+    $('#otsum').innerHTML = `<b>${num(recips.length)}</b> numbers ready${data.invalid?.length ? ` · <span style="color:var(--bad)">${data.invalid.length} not valid</span> (${esc(data.invalid.slice(0, 5).join(', '))}${data.invalid.length > 5 ? '…' : ''})` : ''}${data.duplicates ? ` · ${data.duplicates} duplicates removed` : ''}`;
+    calc();
+  }
+  $('#otcheck').addEventListener('click', () => check(rowsFromSheet(f.list.value.split(/\r?\n/).map(l => l.split(/[,\t;]/)))));
+  $('#otfile').addEventListener('change', async e => { const file = e.target.files[0]; if (!file) return; try { const rows = await readSheet(file); f.list.value = rows.map(r => r.join(', ')).join('\n'); await check(rowsFromSheet(rows)); } catch (err) { toast('Could not read that file.', true); } });
+  $('#otaudio').addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    const path = `${f.org.value}/onetime-${Date.now()}.${(file.name.split('.').pop() || 'mp3').toLowerCase()}`;
+    const up = await sb.storage.from('recordings').upload(path, file, { contentType: file.type || 'audio/mpeg' });
+    if (up.error) return toast('Upload failed: ' + up.error.message, true);
+    audio = sb.storage.from('recordings').getPublicUrl(path).data.publicUrl; f.audio.value = audio; toast('Recording uploaded');
+  });
+  ['input', 'change'].forEach(ev => f.addEventListener(ev, e => { if (e.target === f.price) f.price.dataset.touched = '1'; else if (['msg', 'rt', 'rc', 'client', 'mode'].includes(e.target.name)) calc(); }));
+  f.mode.addEventListener('change', syncMode);
+  async function save() {
+    if (!f.client.value.trim()) { toast('Type who the send is for.', true); return null; }
+    if (!recips.length) { toast('Add the list and press "Check the list".', true); return null; }
+    const row = { from_org: f.org.value, client_name: f.client.value.trim(), client_contact: f.contact.value.trim() || null, message: f.msg.value, mode: f.mode.value,
+      audio_url: f.audio.value.trim() || null, recipients: recips, recipient_count: recips.length, rate_text: +f.rt.value || 0, rate_call: +f.rc.value || 0,
+      price: f.price.value === '' ? null : +f.price.value, consent: f.consent.checked, updated_at: new Date().toISOString() };
+    const r = editing ? await sb.from('onetime_jobs').update(row).eq('id', editing).select('id').single() : await sb.from('onetime_jobs').insert(row).select('id').single();
+    if (r.error) { toast(friendlyError(r.error), true); return null; }
+    editing = r.data?.id || editing; return editing;
+  }
+  $('#otsave').addEventListener('click', async () => { if (await save()) { toast('Saved. Send it any time from the list below.'); drawJobs(); } });
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!f.consent.checked) return toast('Check the box confirming the people agreed to get messages.', true);
+    const id = await save(); if (!id) return;
+    if (!await confirmBox('Send this one-time message?', `${esc(f.client.value)} · ${num(recips.length)} people · charge ${money(f.price.value)}`, 'Send now', false)) return;
+    const { error } = await sb.rpc('onetime_send', { p_job: id });
+    if (error) return toast(friendlyError(error), true);
+    toast('Sending. Calls wait until quiet hours end.'); editing = null; recips = []; f.reset(); delete f.price.dataset.touched; $('#otsum').innerHTML = ''; calc(); drawJobs();
+  });
+  async function drawJobs() {
+    const { data } = await sb.from('onetime_jobs').select('*').order('created_at', { ascending: false }).limit(50);
+    const list = data || [];
+    $('#otjobs').innerHTML = list.length ? `<div class="table-wrap"><table class="data"><thead><tr><th>When</th><th>Client</th><th>From</th><th>People</th><th>How</th><th>Charge</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>${list.map(j => `<tr data-id="${j.id}">
+        <td>${esc(fmtDT(j.sent_at || j.created_at))}</td><td><b>${esc(j.client_name)}</b><div class="small muted">${esc(j.client_contact || '')}</div></td>
+        <td class="small">${esc((orgs || []).find(o => o.id === j.from_org)?.name || '')}</td><td>${num(j.recipient_count)}</td>
+        <td>${{ TEXT: 'Text', CALL: 'Call', BOTH: 'Text + call', VOICE: 'Recording' }[j.mode]}</td><td>${j.price != null ? money(j.price) : '—'}</td>
+        <td><input type="checkbox" data-paid ${j.paid ? 'checked' : ''} title="Mark paid"></td><td>${pill(j.status)}</td>
+        <td style="white-space:nowrap">${j.history_id ? '<button type="button" class="btn sm" data-rep>📊 Report</button> ' : ''}${j.status === 'DRAFT' ? '<button type="button" class="btn secondary sm" data-open>Open</button> <button type="button" class="btn ghost sm" data-del>🗑</button> ' : ''}<button type="button" class="btn ghost sm" data-bill>📋 Bill</button></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty">No one-time sends yet.</div>';
+  }
+  $('#otjobs').addEventListener('click', async e => {
+    const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+    const { data: j } = await sb.from('onetime_jobs').select('*').eq('id', tr.dataset.id).single(); if (!j) return;
+    if (e.target.closest('[data-paid]')) { check2(await sb.from('onetime_jobs').update({ paid: e.target.checked, updated_at: new Date().toISOString() }).eq('id', j.id), e.target.checked ? 'Marked paid' : 'Marked unpaid'); }
+    if (e.target.closest('[data-rep]')) { const { data: h } = await sb.from('message_history').select('*').eq('id', j.history_id).single(); const { data: s2 } = await sb.rpc('delivery_summary', { p_org: h.org_id, p_ids: [h.id] }); h._rep = (s2 || [])[0]; deliveryReport(h); }
+    if (e.target.closest('[data-del]')) { check2(await sb.from('onetime_jobs').delete().eq('id', j.id), 'Deleted'); drawJobs(); }
+    if (e.target.closest('[data-bill]')) {
+      const seg = Math.max(1, segInfo(`${j.client_name} via CommunityConnect:\n${j.message}\nReply STOP to opt out.`).segments);
+      const texts = ['TEXT', 'BOTH'].includes(j.mode) ? j.recipient_count : 0, calls = ['CALL', 'BOTH', 'VOICE'].includes(j.mode) ? j.recipient_count : 0;
+      const txt = `CommunityConnect (Nivolink) - one-time announcement\nFor: ${j.client_name}\nDate: ${fmtDT(j.sent_at || j.created_at)}\n`
+        + (texts ? `Texts: ${texts} x ${seg} part(s) x ${money(j.rate_text)}\n` : '') + (calls ? `Phone calls: ${calls} x ${money(j.rate_call)}\n` : '')
+        + `Total: ${money(j.price)}\n\nThank you!`;
+      try { await navigator.clipboard.writeText(txt); toast('Bill copied. Paste it into an email or text to the client.'); } catch { modal('Bill', `<pre class="cmd" style="white-space:pre-wrap">${esc(txt)}</pre>`, {}); }
+    }
+    if (e.target.closest('[data-open]')) {
+      editing = j.id; recips = j.recipients || []; f.client.value = j.client_name; f.contact.value = j.client_contact || ''; f.org.value = j.from_org; f.mode.value = j.mode;
+      f.msg.value = j.message; f.audio.value = j.audio_url || ''; f.rt.value = j.rate_text; f.rc.value = j.rate_call; f.price.value = j.price ?? ''; f.price.dataset.touched = '1'; f.consent.checked = j.consent;
+      f.list.value = recips.map(r => [r.phone, r.name].filter(Boolean).join(', ')).join('\n'); $('#otsum').innerHTML = `<b>${num(recips.length)}</b> numbers ready`; syncMode(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+  const check2 = (r, ok) => r.error ? toast(friendlyError(r.error), true) : toast(ok);
+  syncMode(); drawJobs();
 }
 
 /* ---------- sample messages ---------- */
@@ -2236,7 +2358,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation', 'p_onetime'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   $$('[data-hebpref]').forEach(b => b.classList.toggle('hidden', !JEW()));
@@ -2259,6 +2381,7 @@ async function render() {
   if (S.view === 'credits') return creditsPage();
   if (S.view === 'samples') return samplesPage();
   if (S.view === 'pronunciation') return pronunciationPage();
+  if (S.view === 'p_onetime') return onetimePage();
   return tablePage(S.view);
 }
 
