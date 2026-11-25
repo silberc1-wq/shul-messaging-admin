@@ -1,0 +1,123 @@
+{
+  "name": "CommunityConnect – Check numbers",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lookup-5c1e7a9d2f4b8e63a0d1",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "26970362-7a14-4c2f-89ed-35f9751e82ff",
+      "name": "Number to check (from Supabase)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "a6add55b-2337-4fd1-a8ab-7f586a621904",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CommunityConnect dispatch secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://lookups.twilio.com/v2/PhoneNumbers/' + encodeURIComponent($json.body.phone) + '?Fields=line_type_intelligence' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "10679641-5c96-46f2-b016-9c982d00c768",
+      "name": "Ask Twilio: mobile or landline?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        200
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "PKocVXFrBevOLz0u",
+          "name": "Twilio account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zuyqaicvnpwqawfxakjg.supabase.co/rest/v1/rpc/save_line_type",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_contact: $('Number to check (from Supabase)').first().json.body.contact, p_phone: $('Number to check (from Supabase)').first().json.body.phone, p_type: ($json.line_type_intelligence || {}).type || null, p_carrier: ($json.line_type_intelligence || {}).carrier_name || null }) }}",
+        "options": {}
+      },
+      "id": "e8f5eb61-8f27-4f96-aff3-cbc24b10e751",
+      "name": "Save the answer (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "UJKemDkIPKxRY4nb",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## CommunityConnect: check numbers\n\nWhen a contact is added (or their number changes), Supabase asks here whether the number is a **mobile or a landline** (Twilio Lookup, $0.008 per number). A landline set to Text is switched to phone calls automatically and the office is told.\n\nExisting contacts are checked a few at a time, every 5 minutes. Canadian numbers are skipped (Twilio needs special approval for those).\n\nNo passwords in this workflow. Credentials: **CommunityConnect dispatch secret** on the first step, **Twilio account** on the Twilio step, **Supabase** on the last step. After pasting: check the three credentials, then **Publish**.",
+        "height": 320,
+        "width": 520,
+        "color": 5
+      },
+      "id": "6045aafa-06c0-472e-b566-2ad9fb8d0b4e",
+      "name": "Read Me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -180
+      ]
+    }
+  ],
+  "connections": {
+    "Number to check (from Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Ask Twilio: mobile or landline?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Twilio: mobile or landline?": {
+      "main": [
+        [
+          {
+            "node": "Save the answer (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -204,7 +204,8 @@ const VIEWS = {
     desc: 'Everyone who receives announcements. Choose TEXT, CALL or EMAIL for each person.',
     cols: [
       { f: 'name', label: 'Name', edit: false }, { f: 'first_name', label: 'First name', req: true, table: false }, { f: 'last_name', label: 'Last name', table: false },
-      { f: 'phone', label: 'Phone', type: 'phone', hint: 'Needed for TEXT and CALL.' },
+      { f: 'phone', label: 'Phone', type: 'phone', hint: 'Needed for TEXT and CALL. New numbers are checked automatically: a landline is switched to phone calls.',
+        render: (v, r) => `${esc(fmtPhone(v))}${lineBadge(r.line_type)}${r.flag_note ? `<div class="small" style="color:var(--bad)" title="${esc(r.flag_note)}">⚠️ ${esc(r.flag_note)}</div>` : ''}` },
       { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS, req: true,
         render: (v, r) => `${esc(v)}${r.also_email && v !== 'EMAIL' ? ' <span class="muted small">+ email</span>' : ''}` },
       { f: 'email', label: 'Email', type: 'email', render: (v, r) => v ? `<span class="small">${esc(v)}</span>${r.email_opt_out_at ? ' <span class="pill bad">unsubscribed</span>' : ''}` : '',
@@ -1589,6 +1590,9 @@ function deliveryLine(x) {
   return `<div class="small" style="line-height:1.5;min-width:190px">${parts.join('<br>')}</div>`;
 }
 const caExtra = (reach, per) => reach && reach.sms_ca ? Math.ceil(reach.sms_ca * per * ((+reach.ca_rate || 1) - 1)) : 0;
+const lineBadge = t => { if (!t) return ''; const k = String(t).split(' · ')[0];
+  const m = { mobile: ['📱', 'Mobile'], landline: ['☎️', 'Landline (cannot get texts)'], fixedvoip: ['🌐', 'Internet phone'], nonfixedvoip: ['🌐', 'Internet phone'], tollfree: ['📞', 'Toll-free'] }[k.toLowerCase()] || ['📞', k];
+  return ` <span class="small muted" title="${esc(m[1] + (t.includes(' · ') ? ' · ' + t.split(' · ')[1] : ''))}">${m[0]}</span>`; };
 const RESULT_LABEL = { delivered: ['Delivered', 'ok'], failed: ['Failed', 'bad'], pending: ['Waiting', 'warn'], answered: ['Answered', 'ok'],
   voicemail: ['Voicemail', 'warn'], no_answer: ['No answer', 'bad'], emailed: ['Emailed', 'ok'] };
 const ERR_LABEL = { '30003': 'Phone off or out of service', '30004': 'Blocked by the person', '30005': 'Number does not exist', '30006': 'Landline or can\'t get texts',
