@@ -10,7 +10,8 @@ const code = new URLSearchParams(location.search).get('org') || '';
 
 function consentText(org, method = 'TEXT', withEmail = false) {
   if (method === 'EMAIL') return `Yes, I agree to receive announcement emails from ${org} via CommunityConnect at the email address provided (for example schedules, event reminders, closures and emergency alerts). I can unsubscribe at any time using the link in every email.`;
-  return `Yes, I agree to receive recurring announcement text messages and/or automated phone calls from ${org} via CommunityConnect at the number provided (for example schedules, event reminders, closures and emergency alerts). Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of any purchase.${withEmail ? ' I also agree to receive these announcements by email and can unsubscribe at any time.' : ''}`;
+  if (method === 'CALL') return `Yes, I agree to receive recurring automated announcement phone calls from ${org} at the number provided (for example schedules, event reminders, closures and emergency alerts). I can stop at any time by calling this number and pressing 9. Consent is not a condition of any purchase.${withEmail ? ' I also agree to receive these announcements by email and can unsubscribe at any time.' : ''}`;
+  return `Yes, I agree to receive recurring announcement text messages from ${org} at the number provided (for example schedules, event reminders, closures and emergency alerts). Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of any purchase.${withEmail ? ' I also agree to receive these announcements by email and can unsubscribe at any time.' : ''}`;
 }
 
 async function init() {
