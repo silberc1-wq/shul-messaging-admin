@@ -58,31 +58,8 @@
     },
     {
       "parameters": {
-        "fromEmail": "={{ ($json.body.from_name || 'CommunityConnect').replace(/[<>\"\\r\\n]/g, '') + ' <hello@nivolink.com>' }}",
-        "toEmail": "={{ $json.body.to }}",
-        "subject": "={{ $json.body.subject }}",
-        "emailFormat": "both",
-        "text": "={{ $json.body.text }}",
-        "options": {
-          "appendAttribution": false,
-          "replyTo": "={{ $json.body.reply_to || '' }}"
-        },
-        "html": "={{ $json.body.html || '' }}"
-      },
-      "id": "b3ae18f7-8212-4180-a847-1bc309de99b2",
-      "name": "Send Email",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [
-        480,
-        180
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "content": "## CommunityConnect: email\n\nSends (1) announcements to members set to EMAIL or \"also email\", and (2) reply / voicemail / signup alerts to each organization's **Forward replies to email**.\n\n1. Open **Send Email** → Credential → **Create new** (SMTP):\n   - Host: smtp.gmail.com, Port: 465, SSL/TLS: on\n   - User: hello@nivolink.com\n   - Password: the same Google **app password** you used in Supabase\n2. Save, then **Publish**.\n\nThe first step checks the **CommunityConnect dispatch secret** credential (Header Auth, Name `X-Dispatch-Secret`). No passwords are typed in this workflow.",
-        "height": 300,
+        "content": "## CommunityConnect: email\n\nSends announcements to members set to EMAIL or \"also email\", and reply / voicemail / signup alerts.\n\nEmails go out through the **Gmail API** (not SMTP: the n8n server's hosting blocks the SMTP mail ports, which is why the old step timed out).\n\n1. Open **Send Email (Gmail)** → Credential → **Create new** → **Gmail OAuth2** → **Sign in with Google** as **hello@nivolink.com**. Name it `hello@nivolink.com (Gmail)`.\n2. Save, then **Publish**.\n\nThe first step checks the **CommunityConnect dispatch secret** credential. No passwords are typed in this workflow.",
+        "height": 380,
         "width": 460,
         "color": 5
       },
@@ -94,6 +71,36 @@
         0,
         -200
       ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.body.to }}",
+        "subject": "={{ $json.body.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body.html || ('<div style=\"font-family:Arial,sans-serif;font-size:15px;line-height:1.5\">' + String($json.body.text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/(https:\\/\\/[^\\s<]+)/g,'<a href=\"$1\">$1</a>').replace(/\\n/g,'<br>') + '</div>') }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "={{ ($json.body.from_name || 'CommunityConnect').replace(/[<>\"\\r\\n]/g, '') }}",
+          "replyTo": "={{ $json.body.reply_to || '' }}"
+        }
+      },
+      "id": "2ecc16d4-25d6-4496-9729-3eaede84c2d4",
+      "name": "Send Email (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        180
+      ],
+      "webhookId": "ad40974e-dc27-4faa-99de-45421fe1ee2c",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "hello@nivolink.com (Gmail)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
     }
   ],
   "connections": {
@@ -112,7 +119,7 @@
       "main": [
         [
           {
-            "node": "Send Email",
+            "node": "Send Email (Gmail)",
             "type": "main",
             "index": 0
           }
