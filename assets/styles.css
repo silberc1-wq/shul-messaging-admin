@@ -428,3 +428,6 @@ button.chip{border:1px solid transparent;font:inherit;font-size:12px}button.chip
 .vchoice label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
 .vchoice input{margin-top:4px}
 .chip.warn{background:#fff3d6;color:#7a5200}
+
+a.plink{color:inherit;text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
+a.plink:hover{color:var(--sky,#2b6cb0);text-decoration-style:solid}

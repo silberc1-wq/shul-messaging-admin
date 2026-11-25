@@ -203,7 +203,7 @@ const VIEWS = {
   contacts: { title: 'Contacts', perm: 'contacts', icon: '👥', table: 'contacts', scope: 'org', order: ['name', true], soft: true,
     desc: 'Everyone who receives announcements. Choose TEXT, CALL or EMAIL for each person.',
     cols: [
-      { f: 'name', label: 'Name', edit: false }, { f: 'first_name', label: 'First name', req: true, table: false }, { f: 'last_name', label: 'Last name', table: false },
+      { f: 'name', label: 'Name', edit: false, render: (v, r) => r.phone ? pLink(r.phone, v || '—') : esc(v || '') }, { f: 'first_name', label: 'First name', req: true, table: false }, { f: 'last_name', label: 'Last name', table: false },
       { f: 'phone', label: 'Phone', type: 'phone', hint: 'Needed for TEXT and CALL. New numbers are checked automatically: a landline is switched to phone calls.',
         render: (v, r) => `${esc(fmtPhone(v))}${lineBadge(r.line_type)}${r.flag_note ? `<div class="small" style="color:var(--bad)" title="${esc(r.flag_note)}">⚠️ ${esc(r.flag_note)}</div>` : ''}` },
       { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS, req: true,
@@ -297,7 +297,7 @@ const VIEWS = {
   replies: { title: 'Replies', perm: 'contacts', icon: '↩️', table: 'replies', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'Texts members sent back, and voicemails left on the phone line (typed out when "Turn voicemails into text" is on). They are also forwarded to the phones and email in Settings. Private voicemails (press 6) show only to the person they are for.',
     cols: [
-      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name', label: 'Name', edit: false }, { f: 'phone', label: 'Phone', type: 'phone', edit: false },
+      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name', label: 'Name', edit: false, render: (v, r) => pLink(r.phone, v || '—') }, { f: 'phone', label: 'Phone', type: 'phone', edit: false, render: v => pLink(v) },
       { f: 'message', label: 'Message', type: 'longtext', edit: false },
       { f: 'audio_url', label: 'Voicemail', edit: false, render: v => audioPlayer(v) }, { f: 'is_private', label: 'Private', edit: false, render: v => v ? '<span class="pill warn">🔒 Private</span>' : '' }, { f: 'status', label: 'Status', type: 'select', opts: ['NEW', 'FORWARDED', 'HANDLED'] },
       { f: 'notes', label: 'Notes', type: 'longtext', table: false },
@@ -307,7 +307,7 @@ const VIEWS = {
   signup_requests: { title: 'Signup Requests', perm: 'contacts', icon: '🙋', table: 'signup_requests', scope: 'org', order: ['created_at', false], soft: true, noAdd: true,
     desc: 'People who texted JOIN (when auto-signup is off). Approve to add them to Contacts.',
     cols: [
-      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name_given', label: 'Name' }, { f: 'phone', label: 'Phone', type: 'phone' }, { f: 'email', label: 'Email', type: 'email' },
+      { f: 'created_at', label: 'When', type: 'datetime', edit: false }, { f: 'name_given', label: 'Name', render: (v, r) => r.phone ? pLink(r.phone, v || '—') : esc(v || '') }, { f: 'phone', label: 'Phone', type: 'phone', render: v => pLink(v) }, { f: 'email', label: 'Email', type: 'email' },
       { f: 'requested_groups', label: 'Groups', type: 'groups' }, { f: 'method', label: 'Method', type: 'select', opts: METHOD_OPTS },
       { f: 'status', label: 'Status', type: 'status', edit: false }, { f: 'notes', label: 'Notes', type: 'longtext', table: false },
     ],
@@ -317,12 +317,12 @@ const VIEWS = {
 
   opt_outs: { title: 'Opt-outs', icon: '✋', table: 'opt_outs', scope: 'org', order: ['created_at', false], readOnly: true,
     desc: 'People who texted STOP. They are marked inactive automatically. If they text START they are re-activated.',
-    cols: [{ f: 'created_at', label: 'When', type: 'datetime' }, { f: 'name', label: 'Name' }, { f: 'phone', label: 'Phone', type: 'phone' },
+    cols: [{ f: 'created_at', label: 'When', type: 'datetime' }, { f: 'name', label: 'Name', render: (v, r) => pLink(r.phone, v || '—') }, { f: 'phone', label: 'Phone', type: 'phone', render: v => pLink(v) },
       { f: 'original_groups', label: 'Groups they were in' }, { f: 'status', label: 'Status', type: 'status' }] },
 
   inbound: { title: 'Inbound Log', needs: 'history', icon: '📥', table: 'inbound_messages', scope: 'org', order: ['created_at', false], readOnly: true,
     desc: 'Every text the system received and what it did.',
-    cols: [{ f: 'created_at', label: 'When', type: 'datetime' }, { f: 'from_phone', label: 'From', type: 'phone' }, { f: 'body', label: 'Message', type: 'longtext' },
+    cols: [{ f: 'created_at', label: 'When', type: 'datetime' }, { f: 'from_phone', label: 'From', type: 'phone', render: v => pLink(v) }, { f: 'body', label: 'Message', type: 'longtext' },
       { f: 'route', label: 'Result', type: 'status' }, { f: 'reply', label: 'Reply sent', type: 'longtext' }] },
 
   admins: { title: 'Website Admins', perm: 'owner', icon: '🔑', table: 'org_admins', scope: 'org', order: ['email', true], soft: true,
@@ -520,7 +520,7 @@ const NAV_ORG = [
   ['overview', '🏠', 'Overview'], ['send', '✉️', 'Send Message'],
   { g: 'messages', icon: '📨', label: 'Messages', tabs: [['history', 'History'], ['scheduled', 'Scheduled'], ['repeating', 'Repeating'], ['polls', 'Polls'], ['samples', 'Sample messages'], ['pending', 'Waiting for YES']] },
   { g: 'inbox', icon: '📥', label: 'Inbox', tabs: [['replies', 'Replies & voicemails'], ['signup_requests', 'Signup requests'], ['inbound', 'All incoming texts']] },
-  { g: 'people', icon: '👥', label: 'People', tabs: [['contacts', 'Contacts'], ['groups', 'Groups'], ['controllers', 'Texters'], ['opt_outs', 'Opted out']] },
+  { g: 'people', icon: '👥', label: 'People', tabs: [['contacts', 'Contacts'], ['groups', 'Groups'], ['controllers', 'Texters'], ['opt_outs', 'Opted out'], ['mailing', 'Mailing'], ['billing', 'Invoices & payments']] },
   { g: 'org', icon: '⚙️', label: 'Settings', tabs: [['settings', 'Settings'], ['credits', 'Plan & credits'], ['pronunciation', 'Pronunciation'], ['admins', 'Website admins'], ['numbers', 'Phone numbers'], ['registration', 'Texting registration'], ['audit', 'Change log']] },
 ];
 const NAV_PLATFORM = [['h', 'Platform owner'],
@@ -771,6 +771,7 @@ function drawTable(key) {
   $('#tbl thead').onclick = e => { const th = e.target.closest('[data-sort]'); if (!th) return; const f = th.dataset.sort;
     T.sort = T.sort && T.sort[0] === f ? [f, !T.sort[1]] : [f, true]; drawTable(key); };
   $('#tbl tbody').onclick = async e => {
+    if (e.target.closest('[data-person]')) return;
     const tr = e.target.closest('tr'); if (!tr) return; const r = rows.find(x => String(x[v.idField || 'id'] ?? x.org_id) === tr.dataset.id);
     const btn = e.target.closest('button');
     if (!btn) { if (canEdit(r)) editRow(key, r); return; }
@@ -785,11 +786,12 @@ function drawTable(key) {
   };
 }
 
-function editRow(key, row) {
+function editRow(key, row, opts = {}) {
   const v = VIEWS[key]; const isNew = !row; const cols = v.cols.filter(c => c.edit !== false);
-  const data = row || { ...(v.defaults || {}) };
+  const data = row || { ...(v.defaults || {}), ...(opts.prefill || {}) };
   const html = `<div class="grid2">${cols.map(c => `<div class="field" style="${['longtext', 'groups', 'list', 'map'].includes(c.type) ? 'grid-column:1/-1' : ''}">
-    <label>${esc(c.label)}${c.req ? ' *' : ''}</label>${input(c, data[c.f])}${c.hint ? `<div class="hint">${esc(c.hint)}</div>` : ''}</div>`).join('')}</div>`;
+    <label>${esc(c.label)}${c.req ? ' *' : ''}</label>${input(c, data[c.f])}${c.hint ? `<div class="hint">${esc(c.hint)}</div>` : ''}</div>`).join('')}</div>`
+    + (key === 'contacts' && row?.phone ? '<div id="pact" style="margin-top:14px"><div class="small muted">Loading activity…</div></div>' : '');
   modal(isNew ? (v.addTitle || `Add ${v.title.replace(/s$/, '').toLowerCase()}`) : 'Edit', html, { wide: cols.length > 8, onSave: async form => {
     const vals = readForm(form, cols);
     for (const c of cols) if (c.req && (vals[c.f] == null || vals[c.f] === '')) { toast(`${c.label} is required`, true); return false; }
@@ -798,8 +800,9 @@ function editRow(key, row) {
     else check(await sb.from(v.table).update(vals).eq(v.idField || 'id', row[v.idField || 'id']), 'Saved');
     if (key === 'groups') await loadGroups();
     if (v.afterSave) await v.afterSave();
-    tablePage(key);
+    if (opts.stay) render(); else tablePage(key);
   } });
+  if (key === 'contacts' && row?.phone) personActivity($('#pact'), row.phone);
   if (key === 'scheduled') scheduleZmanim($('.modal form, form.modal'));
   const box = $('[data-map]');
   if (box) {
@@ -1305,6 +1308,57 @@ async function costsPage() {
   });
 }
 
+// ---------- Mailing: address labels and lists for postal mail (first step; sending through a mail service comes later) ----------
+async function mailingPage() {
+  const groups = S.groups.filter(g => g.active);
+  $('#main').innerHTML = head('Mailing', 'Send letters or flyers by post: pick who gets it, then print address labels or download the list.') + `
+    <div class="card panel"><div class="grid2">
+      <div class="field"><label>Who</label><select id="mg"><option value="ALL">Everyone</option>${groups.filter(g => g.code !== 'ALL').map(g => `<option value="${esc(g.code)}">${esc(g.name || g.code)}</option>`).join('')}</select></div>
+      <div class="field"><label>Labels</label><select id="ml"><option value="5160">Avery 5160 / 8160 (30 per sheet)</option><option value="5163">Avery 5163 (10 per sheet)</option></select></div></div>
+      <p class="small muted" id="mcount" style="margin:4px 0 12px">Counting…</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="mprint">🖨️ Print labels</button><button class="btn secondary" id="mcsv">⬇️ Download list (CSV)</button></div></div>
+    <div class="card panel" style="margin-top:14px;background:var(--sky-soft)"><h3 style="margin-top:0">Coming soon</h3>
+      <p class="small" style="margin:0">Send a printed letter or postcard to a group straight from here, mailed for you by a mail service, with the cost shown before you send. For now, print labels and mail as usual.</p></div>`;
+  let list = [];
+  const load = async () => {
+    const g = $('#mg').value; let q = sb.from('contacts').select('name,first_name,last_name,address_street,address_city,address_state,address_zip,groups').eq('org_id', S.org.id).eq('active', true).is('deleted_at', null).not('address_street', 'is', null);
+    if (g !== 'ALL') q = q.contains('groups', [g]);
+    const { data } = await q.order('last_name', { ascending: true }); list = (data || []).filter(r => (r.address_street || '').trim() && (r.address_city || '').trim());
+    const { count } = await (g === 'ALL' ? sb.from('contacts').select('id', { count: 'exact', head: true }).eq('org_id', S.org.id).eq('active', true).is('deleted_at', null)
+      : sb.from('contacts').select('id', { count: 'exact', head: true }).eq('org_id', S.org.id).eq('active', true).is('deleted_at', null).contains('groups', [g]));
+    $('#mcount').innerHTML = `<b>${num(list.length)}</b> have a mailing address${count > list.length ? ` · ${num(count - list.length)} have no address yet (add it under People → Contacts)` : ''}.`;
+  };
+  $('#mg').addEventListener('change', load); await load();
+  $('#mcsv').addEventListener('click', () => {
+    const rows = [['Name', 'Street', 'City', 'State', 'ZIP'], ...list.map(r => [r.name || '', r.address_street, r.address_city, r.address_state || '', r.address_zip || ''])];
+    const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'mailing-list.csv'; a.click();
+  });
+  $('#mprint').addEventListener('click', () => {
+    if (!list.length) return toast('Nobody in this group has a mailing address yet', true);
+    const big = $('#ml').value === '5163';
+    const lab = r => `<div class="l"><b>${esc(r.name || '')}</b><br>${esc(r.address_street)}<br>${esc(r.address_city)}${r.address_state ? ', ' + esc(r.address_state) : ''} ${esc(r.address_zip || '')}</div>`;
+    const w = window.open('', '_blank'); if (!w) return toast('Allow pop-ups to print labels', true);
+    w.document.write(`<!doctype html><title>Labels</title><style>@page{size:letter;margin:${big ? '0.5in 0.16in' : '0.5in 0.19in'}}body{margin:0;font:${big ? '13pt' : '10.5pt'} Arial,sans-serif}
+      .s{display:grid;grid-template-columns:repeat(${big ? 2 : 3},${big ? '4in' : '2.625in'});grid-auto-rows:${big ? '2in' : '1in'};column-gap:${big ? '0.19in' : '0.125in'}}
+      .l{padding:${big ? '0.25in' : '0.12in 0.15in'};overflow:hidden;line-height:1.25}</style><div class="s">${list.map(lab).join('')}</div><script>onload=()=>print()<\/script>`);
+    w.document.close();
+  });
+}
+// ---------- Invoices & payments: coming soon ----------
+function billingPage() {
+  $('#main').innerHTML = head('Invoices & payments', 'Coming soon: bill members and collect payments from the same member list.') + `
+    <div class="card panel"><h3 style="margin-top:0">What's coming</h3>
+      <ul class="small" style="line-height:1.8;margin:0;padding-left:18px">
+        <li><b>Invoices:</b> send members an invoice for dues, seats, pledges or events, by text and email, with a link to pay.</li>
+        <li><b>Online payments:</b> members pay by card from their phone; payments are matched to the member automatically.</li>
+        <li><b>Balances:</b> see who paid and who owes on each person's record, and send a reminder in one click.</li>
+        <li><b>Donations:</b> a donation link in announcements, with receipts.</li>
+        <li><b>Mailed statements:</b> print or mail year-end statements from the Mailing page.</li>
+      </ul>
+      <p class="small muted" style="margin:12px 0 0">Interested? Tell us what you need, so we can build it the way your organization works.</p></div>`;
+}
+
 async function onetimePage() {
   if (!S.isPlatform) { $('#main').innerHTML = head('One-time sends', '') + '<div class="card panel">Only the platform owner can use this.</div>'; return; }
   const [{ data: orgs }, { data: sets }, { data: jobs }] = await Promise.all([
@@ -1593,6 +1647,35 @@ const caExtra = (reach, per) => reach && reach.sms_ca ? Math.ceil(reach.sms_ca *
 const lineBadge = t => { if (!t) return ''; const k = String(t).split(' · ')[0];
   const m = { mobile: ['📱', 'Mobile'], landline: ['☎️', 'Landline (cannot get texts)'], fixedvoip: ['🌐', 'Internet phone'], nonfixedvoip: ['🌐', 'Internet phone'], tollfree: ['📞', 'Toll-free'] }[k.toLowerCase()] || ['📞', k];
   return ` <span class="small muted" title="${esc(m[1] + (t.includes(' · ') ? ' · ' + t.split(' · ')[1] : ''))}">${m[0]}</span>`; };
+// ---------- people are clickable everywhere: a name or number opens that person's record ----------
+const pLink = (phone, label) => phone ? `<a href="#" class="plink" data-person="${esc(phone)}" title="Open this person">${esc(label || fmtPhone(phone))}</a>` : esc(label || '');
+async function openPerson(phone) {
+  if (!S.perms.contacts) return toast('You do not have access to People', true);
+  const { data } = await sb.from('contacts').select('*').eq('org_id', S.org.id).eq('phone', phone).is('deleted_at', null).limit(1);
+  if (data && data[0]) return editRow('contacts', data[0], { stay: true });
+  editRow('contacts', null, { stay: true, prefill: { phone, method: 'TEXT', active: true } });
+  toast('Not in your contacts yet: fill in the name to add them.');
+}
+document.addEventListener('click', e => { const a = e.target.closest('[data-person]'); if (!a) return; e.preventDefault(); openPerson(a.dataset.person); });
+// a person's activity, shown under their record
+async function personActivity(box, phone) {
+  if (!box || !phone) return;
+  const [dl, rp, pv, oo] = await Promise.all([
+    sb.from('delivery_log').select('created_at,channel,status,duration,history_id').eq('org_id', S.org.id).eq('to_phone', phone).order('created_at', { ascending: false }).limit(10),
+    sb.from('replies').select('created_at,message,audio_url').eq('org_id', S.org.id).eq('phone', phone).is('deleted_at', null).order('created_at', { ascending: false }).limit(5),
+    sb.from('poll_votes').select('created_at,choice,poll_id').eq('org_id', S.org.id).eq('phone', phone).order('created_at', { ascending: false }).limit(5),
+    sb.from('opt_outs').select('created_at,method,status').eq('org_id', S.org.id).eq('phone', phone).order('created_at', { ascending: false }).limit(3)]);
+  const hid = [...new Set((dl.data || []).map(d => d.history_id).filter(Boolean))];
+  const hm = {}; if (hid.length) { const { data } = await sb.from('message_history').select('id,message,group_name,audio_url').in('id', hid); (data || []).forEach(h => (hm[h.id] = h)); }
+  const lab = d => ({ delivered: '✅ delivered', read: '✅ read', completed: d.duration ? `✅ answered · ${d.duration}s` : '✅ answered', undelivered: '❌ not delivered', failed: '❌ failed', busy: '📵 busy', 'no-answer': '📵 no answer' }[d.status] || esc(d.status || 'sending'));
+  const rows = [
+    ...(dl.data || []).map(d => ({ t: d.created_at, html: `${d.channel === 'call' ? '📞' : d.channel === 'email' ? '📧' : '💬'} ${esc((hm[d.history_id]?.audio_url ? '🎙️ voice message' : (hm[d.history_id]?.message || '')).slice(0, 70))} <span class="muted">· ${lab(d)}</span>` })),
+    ...(rp.data || []).map(r => ({ t: r.created_at, html: `↩️ <b>Replied:</b> ${esc((r.message || '').slice(0, 80))}` })),
+    ...(pv.data || []).map(v => ({ t: v.created_at, html: `🗳️ Voted ${esc(String(v.choice))} in a poll` })),
+    ...(oo.data || []).map(o => ({ t: o.created_at, html: o.status === 'REJOINED' ? '✅ Opted back in' : `🚫 Opted out (${esc(o.method || '')})` }))
+  ].sort((a, b) => String(b.t || '').localeCompare(String(a.t || ''))).slice(0, 15);
+  box.innerHTML = `<h4 style="margin:0 0 6px">Activity</h4>` + (rows.length ? rows.map(r => `<div class="small" style="padding:4px 0;border-top:1px solid var(--line)"><span class="muted nowrap">${esc(fmtDT(r.t))}</span> · ${r.html}</div>`).join('') : '<div class="small muted">Nothing yet.</div>');
+}
 const RESULT_LABEL = { delivered: ['Delivered', 'ok'], failed: ['Failed', 'bad'], pending: ['Waiting', 'warn'], answered: ['Answered', 'ok'],
   voicemail: ['Voicemail', 'warn'], no_answer: ['No answer', 'bad'], emailed: ['Emailed', 'ok'] };
 const ERR_LABEL = { '30003': 'Phone off or out of service', '30004': 'Blocked by the person', '30005': 'Number does not exist', '30006': 'Landline or can\'t get texts',
@@ -1672,7 +1755,7 @@ async function deliveryReport(h) {
       && (!f || (f === 'replied' ? !!r.replied : r.result === f)));
     $('#repbody').innerHTML = list.map(r => { const [l, c] = RESULT_LABEL[r.result] || [r.result, ''];
       const why = r.error_code ? ERR_LABEL[r.error_code] || ('Error ' + r.error_code) : '';
-      return `<tr><td>${esc(r.name || '—')}</td><td class="nowrap">${r.phone ? esc(fmtPhone(r.phone)) : `<span class="small">${esc(r.email || '')}</span>`}</td><td>${r.channel === 'call' ? '📞 Call' : r.channel === 'email' ? '📧 Email' : '💬 Text'}</td>
+      return `<tr><td>${r.phone ? pLink(r.phone, r.name || '—') : esc(r.name || '—')}</td><td class="nowrap">${r.phone ? pLink(r.phone) : `<span class="small">${esc(r.email || '')}</span>`}</td><td>${r.channel === 'call' ? '📞 Call' : r.channel === 'email' ? '📧 Email' : '💬 Text'}</td>
         <td><span class="pill ${c}">${esc(l)}</span>${why ? `<div class="small muted">${esc(why)}</div>` : ''}</td>
         <td class="nowrap">${r.channel === 'call' && r.duration ? esc(secs(r.duration)) : ''}</td><td class="small">${esc(r.replied || '')}</td></tr>`; }).join('')
       || '<tr><td colspan="6" class="empty">Nobody matches.</td></tr>';
@@ -2458,7 +2541,7 @@ function copyCompliance(r) {
    ============================================================ */
 async function render() {
   const key = (location.hash || '#overview').slice(1);
-  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation', 'p_onetime', 'p_costs'].includes(key) || VIEWS[key];
+  const known = ['overview', 'settings', 'registration', 'send', 'polls', 'repeating', 'credits', 'samples', 'pronunciation', 'p_onetime', 'p_costs', 'mailing', 'billing'].includes(key) || VIEWS[key];
   S.view = known && (!VIEWS[key]?.platform || S.isPlatform) ? key : 'overview';
   renderNav();
   $$('[data-hebpref]').forEach(b => b.classList.toggle('hidden', !JEW()));
@@ -2483,6 +2566,8 @@ async function render() {
   if (S.view === 'pronunciation') return pronunciationPage();
   if (S.view === 'p_onetime') return onetimePage();
   if (S.view === 'p_costs') return costsPage();
+  if (S.view === 'mailing') return mailingPage();
+  if (S.view === 'billing') return billingPage();
   return tablePage(S.view);
 }
 
