@@ -58,7 +58,10 @@ document.querySelectorAll('[data-brand]').forEach(el => (el.textContent = cfg.br
 function toast(msg, isError) {
   const nc = /NO_CREDITS:(\d+):(\d+)/.exec(String(msg || ''));
   if (nc) { creditsModal(+nc[1], +nc[2]); return; }
-  const t = $('#toast'); t.textContent = msg; t.className = 'show' + (isError ? ' error' : '');
+  const oo = /OPTED_OUT:\s*(.*)/.exec(String(msg || ''));
+  if (oo) { msg = '🚫 ' + oo[1]; }
+  const t = $('#toast'); t.textContent = msg;
+  if (oo) { clearTimeout(t._h); t.className = 'show error'; t._h = setTimeout(() => (t.className = ''), 9000); return; } t.className = 'show' + (isError ? ' error' : '');
   clearTimeout(t._h); t._h = setTimeout(() => (t.className = ''), 4000);
 }
 function friendlyError(e) {
